@@ -137,7 +137,6 @@ INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_r
 -- Moving the data and deduping happens in a transaction to prevent duplicates from appearing
 BEGIN;
 
-
 -- Step 2: First, delete any old entries from the raw table which have new records
 -- This might be better than using row_number() after inserting the new data into the raw table because the set of PKs to consider will likely be smaller.  The trade is a second round of SAFE_CAST. if that's fast, it might be a good idea
 
@@ -197,7 +196,6 @@ UPDATE z_airbyte.users_raw
 SET _airbyte_typed_at = NOW()
 WHERE _airbyte_typed_at IS NULL
 ;
-
 
 COMMIT;
 
@@ -230,7 +228,6 @@ INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_r
 -- Moving the data and deduping happens in a transaction to prevent duplicates from appearing
 BEGIN;
 
-
 -- Step 2: First, delete any old entries from the raw table which have new records
 -- This might be better than using row_number() after inserting the new data into the raw table because the set of PKs to consider will likely be smaller.  The trade is a second round of SAFE_CAST. if that's fast, it might be a good idea
 
@@ -290,7 +287,6 @@ UPDATE z_airbyte.users_raw
 SET _airbyte_typed_at = NOW()
 WHERE _airbyte_typed_at IS NULL
 ;
-
 
 COMMIT;
 
@@ -319,7 +315,6 @@ INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_r
 -- Moving the data and deduping happens in a transaction to prevent duplicates from appearing
 BEGIN;
 
-
 -- Step 2: First, delete any old entries from the raw table which have new records
 -- This might be better than using row_number() after inserting the new data into the raw table because the set of PKs to consider will likely be smaller.  The trade is a second round of SAFE_CAST. if that's fast, it might be a good idea
 
@@ -379,6 +374,5 @@ UPDATE z_airbyte.users_raw
 SET _airbyte_typed_at = NOW()
 WHERE _airbyte_typed_at IS NULL
 ;
-
 
 COMMIT;

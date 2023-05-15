@@ -91,66 +91,67 @@ INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_r
 -- Moving the data and deduping happens in a transaction to prevent duplicates from appearing
 BEGIN;
 
--- Step 2: Type the Data & handle errors
+-- Step 2: First, delete any old entries from the raw table which have new records
+-- This might be better than using row_number() after inserting the new data into the raw table because the set of PKs to consider will likely be smaller.  The trade is a second round of SAFE_CAST. if that's fast, it might be a good idea
+
+DELETE FROM Z_AIRBYTE.USERS_RAW
+WHERE "_airbyte_raw_id" IN (
+	SELECT "_airbyte_raw_id"
+	FROM PUBLIC.USERS
+	WHERE
+		"id" IN (
+			SELECT TRY_CAST("_airbyte_data":"id"::text AS INT) as id
+			FROM Z_AIRBYTE.USERS_RAW
+			WHERE "_airbyte_typed_at" IS NULL -- considering only new/null values, we can recover from failed previous checkpoints
+		)
+)
+AND "_airbyte_typed_at" IS NOT NULL
+;
+
+-- Step 3: Also, delete any old entries from the typed table which have new records
+
+DELETE FROM PUBLIC.USERS
+WHERE "id" in (
+	SELECT
+		TRY_CAST("_airbyte_data":"id"::text AS INT) as id
+	FROM Z_AIRBYTE.USERS_RAW
+	WHERE "_airbyte_typed_at" IS NULL -- considering only new/null values, we can recover from failed previous checkpoints
+)
+;
+
+
+-- Step 3: Type the Data & handle errors
 -- Note: We know the column names from the schema, so we don't need to anything refelxive to look up the column names
+-- Don't insert rows which have been deleted by CDC
 
 INSERT INTO PUBLIC.USERS
 SELECT
 	TRY_CAST("_airbyte_data":"id"::text AS INT) as id,
 	TRY_CAST("_airbyte_data":"first_name"::text AS TEXT) as first_name,
 	TRY_CAST("_airbyte_data":"age"::text AS INT) as age,
-	"_airbyte_data":"address", -- TRY_CAST does not work with JSON/VARIANT
+	"_airbyte_data":"address" as address, -- TRY_CAST does not work with JSON/VARIANT
 	(
 		CASE
 			WHEN "_airbyte_data":"id" IS NOT NULL AND TRY_CAST("_airbyte_data":"id"::text AS INT) IS NULL THEN PARSE_JSON($${error: "Problem with `id`"}$$)
-	   		WHEN "_airbyte_data":"first_name" IS NOT NULL AND TRY_CAST("_airbyte_data":"first_name"::text AS TEXT) IS NULL THEN PARSE_JSON($${error: "Problem with `first_name`"}$$)
+			WHEN "_airbyte_data":"first_name" IS NOT NULL AND TRY_CAST("_airbyte_data":"first_name"::text AS TEXT) IS NULL THEN PARSE_JSON($${error: "Problem with `first_name`"}$$)
 			WHEN "_airbyte_data":"age" IS NOT NULL AND TRY_CAST("_airbyte_data":"age"::text AS INT) IS NULL THEN PARSE_JSON($${error: "Problem with `age`"}$$)
+			-- no TRY_CAST for JSON
 			ELSE PARSE_JSON($${}$$)
 		END
-	) as "_airbyte_meta",
+	) as _airbyte_meta,
 	"_airbyte_raw_id",
 	"_airbyte_read_at"
 FROM Z_AIRBYTE.USERS_RAW
 WHERE
-	"_airbyte_typed_at" IS NULL -- inserting only null values, we can recover from failed previous checkpoints
+	"_airbyte_typed_at" IS NULL -- inserting only new/null values, we can recover from failed previous checkpoints
+	AND "_airbyte_data":"_ab_cdc_deleted_at" IS NULL -- Skip CDC deleted rows (old records are already cleared away above
 ;
 
--- Step 3: De-dupe Typed Table
--- ... assuming the user wanted dedupe
--- -- Note: CTEs only work with selects in SNOWFLAKE
-DELETE FROM PUBLIC.USERS
-WHERE "_airbyte_raw_id" in (
-	SELECT "_airbyte_raw_id" FROM (
-		SELECT "_airbyte_raw_id", row_number() OVER (
-			PARTITION BY "id" ORDER BY "_airbyte_read_at" DESC
-		) as row_number FROM PUBLIC.USERS
-	)
-	WHERE row_number != 1
-)
-;
-
--- Step 4: Deal with CDC Deletion (and other special cases)
-DELETE FROM PUBLIC.USERS WHERE "id" IN (
-	SELECT
-		TRY_CAST("_airbyte_data":"id"::text AS INT) as "id" -- based on the PK which we know from the connector catalog
-	FROM Z_AIRBYTE.USERS_RAW
-	WHERE "_airbyte_data":"_ab_cdc_deleted_at" IS NOT NULL
-)
-;
-
--- Step 5: Remove old entries from Raw table
-DELETE FROM Z_AIRBYTE.USERS_RAW
-WHERE "_airbyte_raw_id" NOT IN (
-	SELECT "_airbyte_raw_id" FROM PUBLIC.USERS
-)
-;
-
--- Step 6: Apply typed_at timestamp where needed
+-- Step 4: Apply typed_at timestamp where needed
 UPDATE Z_AIRBYTE.USERS_RAW
 SET "_airbyte_typed_at" = CURRENT_TIMESTAMP()
 WHERE "_airbyte_typed_at" IS NULL
 ;
-
 
 COMMIT;
 
@@ -195,66 +196,67 @@ INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_r
 -- Moving the data and deduping happens in a transaction to prevent duplicates from appearing
 BEGIN;
 
--- Step 2: Type the Data & handle errors
+-- Step 2: First, delete any old entries from the raw table which have new records
+-- This might be better than using row_number() after inserting the new data into the raw table because the set of PKs to consider will likely be smaller.  The trade is a second round of SAFE_CAST. if that's fast, it might be a good idea
+
+DELETE FROM Z_AIRBYTE.USERS_RAW
+WHERE "_airbyte_raw_id" IN (
+	SELECT "_airbyte_raw_id"
+	FROM PUBLIC.USERS
+	WHERE
+		"id" IN (
+			SELECT TRY_CAST("_airbyte_data":"id"::text AS INT) as id
+			FROM Z_AIRBYTE.USERS_RAW
+			WHERE "_airbyte_typed_at" IS NULL -- considering only new/null values, we can recover from failed previous checkpoints
+		)
+)
+AND "_airbyte_typed_at" IS NOT NULL
+;
+
+-- Step 3: Also, delete any old entries from the typed table which have new records
+
+DELETE FROM PUBLIC.USERS
+WHERE "id" in (
+	SELECT
+		TRY_CAST("_airbyte_data":"id"::text AS INT) as id
+	FROM Z_AIRBYTE.USERS_RAW
+	WHERE "_airbyte_typed_at" IS NULL -- considering only new/null values, we can recover from failed previous checkpoints
+)
+;
+
+
+-- Step 3: Type the Data & handle errors
 -- Note: We know the column names from the schema, so we don't need to anything refelxive to look up the column names
+-- Don't insert rows which have been deleted by CDC
 
 INSERT INTO PUBLIC.USERS
 SELECT
 	TRY_CAST("_airbyte_data":"id"::text AS INT) as id,
 	TRY_CAST("_airbyte_data":"first_name"::text AS TEXT) as first_name,
 	TRY_CAST("_airbyte_data":"age"::text AS INT) as age,
-	"_airbyte_data":"address", -- TRY_CAST does not work with JSON/VARIANT
+	"_airbyte_data":"address" as address, -- TRY_CAST does not work with JSON/VARIANT
 	(
 		CASE
 			WHEN "_airbyte_data":"id" IS NOT NULL AND TRY_CAST("_airbyte_data":"id"::text AS INT) IS NULL THEN PARSE_JSON($${error: "Problem with `id`"}$$)
-	   		WHEN "_airbyte_data":"first_name" IS NOT NULL AND TRY_CAST("_airbyte_data":"first_name"::text AS TEXT) IS NULL THEN PARSE_JSON($${error: "Problem with `first_name`"}$$)
+			WHEN "_airbyte_data":"first_name" IS NOT NULL AND TRY_CAST("_airbyte_data":"first_name"::text AS TEXT) IS NULL THEN PARSE_JSON($${error: "Problem with `first_name`"}$$)
 			WHEN "_airbyte_data":"age" IS NOT NULL AND TRY_CAST("_airbyte_data":"age"::text AS INT) IS NULL THEN PARSE_JSON($${error: "Problem with `age`"}$$)
+			-- no TRY_CAST for JSON
 			ELSE PARSE_JSON($${}$$)
 		END
-	) as "_airbyte_meta",
+	) as _airbyte_meta,
 	"_airbyte_raw_id",
 	"_airbyte_read_at"
 FROM Z_AIRBYTE.USERS_RAW
 WHERE
-	"_airbyte_typed_at" IS NULL -- inserting only null values, we can recover from failed previous checkpoints
+	"_airbyte_typed_at" IS NULL -- inserting only new/null values, we can recover from failed previous checkpoints
+	AND "_airbyte_data":"_ab_cdc_deleted_at" IS NULL -- Skip CDC deleted rows (old records are already cleared away above
 ;
 
--- Step 3: De-dupe Typed Table
--- ... assuming the user wanted dedupe
--- -- Note: CTEs only work with selects in SNOWFLAKE
-DELETE FROM PUBLIC.USERS
-WHERE "_airbyte_raw_id" in (
-	SELECT "_airbyte_raw_id" FROM (
-		SELECT "_airbyte_raw_id", row_number() OVER (
-			PARTITION BY "id" ORDER BY "_airbyte_read_at" DESC
-		) as row_number FROM PUBLIC.USERS
-	)
-	WHERE row_number != 1
-)
-;
-
--- Step 4: Deal with CDC Deletion (and other special cases)
-DELETE FROM PUBLIC.USERS WHERE "id" IN (
-	SELECT
-		TRY_CAST("_airbyte_data":"id"::text AS INT) as "id" -- based on the PK which we know from the connector catalog
-	FROM Z_AIRBYTE.USERS_RAW
-	WHERE "_airbyte_data":"_ab_cdc_deleted_at" IS NOT NULL
-)
-;
-
--- Step 5: Remove old entries from Raw table
-DELETE FROM Z_AIRBYTE.USERS_RAW
-WHERE "_airbyte_raw_id" NOT IN (
-	SELECT "_airbyte_raw_id" FROM PUBLIC.USERS
-)
-;
-
--- Step 6: Apply typed_at timestamp where needed
+-- Step 4: Apply typed_at timestamp where needed
 UPDATE Z_AIRBYTE.USERS_RAW
 SET "_airbyte_typed_at" = CURRENT_TIMESTAMP()
 WHERE "_airbyte_typed_at" IS NULL
 ;
-
 
 COMMIT;
 
@@ -289,65 +291,66 @@ INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_r
 -- Moving the data and deduping happens in a transaction to prevent duplicates from appearing
 BEGIN;
 
--- Step 2: Type the Data & handle errors
+-- Step 2: First, delete any old entries from the raw table which have new records
+-- This might be better than using row_number() after inserting the new data into the raw table because the set of PKs to consider will likely be smaller.  The trade is a second round of SAFE_CAST. if that's fast, it might be a good idea
+
+DELETE FROM Z_AIRBYTE.USERS_RAW
+WHERE "_airbyte_raw_id" IN (
+	SELECT "_airbyte_raw_id"
+	FROM PUBLIC.USERS
+	WHERE
+		"id" IN (
+			SELECT TRY_CAST("_airbyte_data":"id"::text AS INT) as id
+			FROM Z_AIRBYTE.USERS_RAW
+			WHERE "_airbyte_typed_at" IS NULL -- considering only new/null values, we can recover from failed previous checkpoints
+		)
+)
+AND "_airbyte_typed_at" IS NOT NULL
+;
+
+-- Step 3: Also, delete any old entries from the typed table which have new records
+
+DELETE FROM PUBLIC.USERS
+WHERE "id" in (
+	SELECT
+		TRY_CAST("_airbyte_data":"id"::text AS INT) as id
+	FROM Z_AIRBYTE.USERS_RAW
+	WHERE "_airbyte_typed_at" IS NULL -- considering only new/null values, we can recover from failed previous checkpoints
+)
+;
+
+
+-- Step 3: Type the Data & handle errors
 -- Note: We know the column names from the schema, so we don't need to anything refelxive to look up the column names
+-- Don't insert rows which have been deleted by CDC
 
 INSERT INTO PUBLIC.USERS
 SELECT
 	TRY_CAST("_airbyte_data":"id"::text AS INT) as id,
 	TRY_CAST("_airbyte_data":"first_name"::text AS TEXT) as first_name,
 	TRY_CAST("_airbyte_data":"age"::text AS INT) as age,
-	"_airbyte_data":"address", -- TRY_CAST does not work with JSON/VARIANT
+	"_airbyte_data":"address" as address, -- TRY_CAST does not work with JSON/VARIANT
 	(
 		CASE
 			WHEN "_airbyte_data":"id" IS NOT NULL AND TRY_CAST("_airbyte_data":"id"::text AS INT) IS NULL THEN PARSE_JSON($${error: "Problem with `id`"}$$)
-	   		WHEN "_airbyte_data":"first_name" IS NOT NULL AND TRY_CAST("_airbyte_data":"first_name"::text AS TEXT) IS NULL THEN PARSE_JSON($${error: "Problem with `first_name`"}$$)
+			WHEN "_airbyte_data":"first_name" IS NOT NULL AND TRY_CAST("_airbyte_data":"first_name"::text AS TEXT) IS NULL THEN PARSE_JSON($${error: "Problem with `first_name`"}$$)
 			WHEN "_airbyte_data":"age" IS NOT NULL AND TRY_CAST("_airbyte_data":"age"::text AS INT) IS NULL THEN PARSE_JSON($${error: "Problem with `age`"}$$)
+			-- no TRY_CAST for JSON
 			ELSE PARSE_JSON($${}$$)
 		END
-	) as "_airbyte_meta",
+	) as _airbyte_meta,
 	"_airbyte_raw_id",
 	"_airbyte_read_at"
 FROM Z_AIRBYTE.USERS_RAW
 WHERE
-	"_airbyte_typed_at" IS NULL -- inserting only null values, we can recover from failed previous checkpoints
+	"_airbyte_typed_at" IS NULL -- inserting only new/null values, we can recover from failed previous checkpoints
+	AND "_airbyte_data":"_ab_cdc_deleted_at" IS NULL -- Skip CDC deleted rows (old records are already cleared away above
 ;
 
--- Step 3: De-dupe Typed Table
--- ... assuming the user wanted dedupe
--- -- Note: CTEs only work with selects in SNOWFLAKE
-DELETE FROM PUBLIC.USERS
-WHERE "_airbyte_raw_id" in (
-	SELECT "_airbyte_raw_id" FROM (
-		SELECT "_airbyte_raw_id", row_number() OVER (
-			PARTITION BY "id" ORDER BY "_airbyte_read_at" DESC
-		) as row_number FROM PUBLIC.USERS
-	)
-	WHERE row_number != 1
-)
-;
-
--- Step 4: Deal with CDC Deletion (and other special cases)
-DELETE FROM PUBLIC.USERS WHERE "id" IN (
-	SELECT
-		TRY_CAST("_airbyte_data":"id"::text AS INT) as "id" -- based on the PK which we know from the connector catalog
-	FROM Z_AIRBYTE.USERS_RAW
-	WHERE "_airbyte_data":"_ab_cdc_deleted_at" IS NOT NULL
-)
-;
-
--- Step 5: Remove old entries from Raw table
-DELETE FROM Z_AIRBYTE.USERS_RAW
-WHERE "_airbyte_raw_id" NOT IN (
-	SELECT "_airbyte_raw_id" FROM PUBLIC.USERS
-)
-;
-
--- Step 6: Apply typed_at timestamp where needed
+-- Step 4: Apply typed_at timestamp where needed
 UPDATE Z_AIRBYTE.USERS_RAW
 SET "_airbyte_typed_at" = CURRENT_TIMESTAMP()
 WHERE "_airbyte_typed_at" IS NULL
 ;
-
 
 COMMIT;
