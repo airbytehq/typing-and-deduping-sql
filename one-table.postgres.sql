@@ -152,6 +152,7 @@ WHERE _airbyte_raw_id IN (
 			WHERE _airbyte_typed_at IS NULL -- considering only new/null values, we can recover from failed previous checkpoints
 		)
 )
+AND _airbyte_typed_at IS NOT NULL
 ;
 
 -- Step 3: Also, delete any old entries from the typed table which have new records
@@ -244,6 +245,7 @@ WHERE _airbyte_raw_id IN (
 			WHERE _airbyte_typed_at IS NULL -- considering only new/null values, we can recover from failed previous checkpoints
 		)
 )
+AND _airbyte_typed_at IS NOT NULL
 ;
 
 -- Step 3: Also, delete any old entries from the typed table which have new records
@@ -332,6 +334,7 @@ WHERE _airbyte_raw_id IN (
 			WHERE _airbyte_typed_at IS NULL -- considering only new/null values, we can recover from failed previous checkpoints
 		)
 )
+AND _airbyte_typed_at IS NOT NULL
 ;
 
 -- Step 3: Also, delete any old entries from the typed table which have new records
