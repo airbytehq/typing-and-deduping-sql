@@ -35,6 +35,8 @@ COPY z_airbyte.users_raw to '/Users/evan/workspace/airbyte/typing-and-deduping-s
 WITH (FORMAT CSV, HEADER TRUE, ENCODING 'UTF8', quote '|', delimiter E'\t');
 ```
 
+Loading 1M records from CSV took about ~75 seconds.
+
 ### Snowflake Observations
 
 - Can't use JSON files to load, 16MB limit for the whole file. Can't use normal CSV, because double-quoting JSON confuses snowflake's parser. Solution was to use ';' as `FIELD_DELIMITER`
