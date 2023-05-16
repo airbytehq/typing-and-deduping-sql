@@ -21,7 +21,7 @@ TRUNCATE TABLE Z_AIRBYTE.USERS_RAW;
 
 -- Load in the data (CSV)
 COPY INTO Z_AIRBYTE.USERS_RAW
-FROM 'gcs://airbyte-performance-testing-public/typing-deduping-testing/users_raw_10.csv'
+FROM 'gcs://airbyte-performance-testing-public/typing-deduping-testing/users_raw.csv'
 FILE_FORMAT = (TYPE = 'CSV' FIELD_DELIMITER = '\t' SKIP_HEADER = 1 ERROR_ON_COLUMN_COUNT_MISMATCH = FALSE)
 FORCE = TRUE
 PURGE = FALSE
