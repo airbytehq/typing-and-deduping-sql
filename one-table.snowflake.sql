@@ -46,8 +46,8 @@ CREATE TABLE PUBLIC.USERS (
 
 CREATE SCHEMA IF NOT EXISTS Z_AIRBYTE;
 CREATE TABLE IF NOT EXISTS Z_AIRBYTE.USERS_RAW (
-    "_airbyte_data" variant NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_raw_id" VARCHAR(36) NOT NULL, -- Airbyte column, cannot be null
+    "_airbyte_data" variant NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_read_at" timestamp NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_typed_at" timestamp -- Airbyte column
 );
@@ -163,8 +163,8 @@ COMMIT;
 
 CREATE SCHEMA IF NOT EXISTS Z_AIRBYTE;
 CREATE TABLE IF NOT EXISTS Z_AIRBYTE.USERS_RAW (
-    "_airbyte_data" variant NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_raw_id" VARCHAR(36) NOT NULL, -- Airbyte column, cannot be null
+    "_airbyte_data" variant NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_read_at" timestamp NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_typed_at" timestamp -- Airbyte column
 );
@@ -268,8 +268,8 @@ COMMIT;
 
 CREATE SCHEMA IF NOT EXISTS Z_AIRBYTE;
 CREATE TABLE IF NOT EXISTS Z_AIRBYTE.USERS_RAW (
-    "_airbyte_data" variant NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_raw_id" VARCHAR(36) NOT NULL, -- Airbyte column, cannot be null
+    "_airbyte_data" variant NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_read_at" timestamp NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_typed_at" timestamp -- Airbyte column
 );
