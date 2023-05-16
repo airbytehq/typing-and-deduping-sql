@@ -28,14 +28,26 @@ PURGE = FALSE
 ;
 ```
 
-To Dump the file from postgres:
+Loading 1M records from CSV hosted on Google Cloud took about ~75 seconds.
+
+And if you want to insert the data again, to emulate another sync with 1M records:
+
+```sql
+-- Load in the data (CSV) w/o truncating
+COPY INTO Z_AIRBYTE.USERS_RAW
+FROM 'gcs://airbyte-performance-testing-public/typing-deduping-testing/users_raw.csv'
+FILE_FORMAT = (TYPE = 'CSV' FIELD_DELIMITER = '\t' SKIP_HEADER = 1 ERROR_ON_COLUMN_COUNT_MISMATCH = FALSE)
+FORCE = TRUE
+PURGE = FALSE
+;
+```
+
+To Dump the file from postgres (where it was generated locally):
 
 ```sql
 COPY z_airbyte.users_raw to '/Users/evan/workspace/airbyte/typing-and-deduping-sql-experiments/data/users_raw.csv'
 WITH (FORMAT CSV, HEADER TRUE, ENCODING 'UTF8', quote '|', delimiter E'\t');
 ```
-
-Loading 1M records from CSV took about ~75 seconds.
 
 ### Snowflake Observations
 
