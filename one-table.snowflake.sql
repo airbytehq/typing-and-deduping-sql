@@ -88,10 +88,19 @@ INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_r
 		zip: "98999"
 } }$$), UUID_STRING(), CURRENT_TIMESTAMP();
 
+-- Step 2: Validate the incoming data
+-- We can't really do this properly in the pure-SQL example here, but we should throw if any row doesn't have a PK
+SELECT COUNT(1)
+FROM Z_AIRBYTE.USERS_RAW
+WHERE
+	"_airbyte_typed_at" IS NULL
+	AND TRY_CAST("_airbyte_data":"id"::text AS INT) IS NULL
+;
+
 -- Moving the data and deduping happens in a transaction to prevent duplicates from appearing
 BEGIN;
 
--- Step 2: First, delete any old entries from the raw table which have new records
+-- Step 3: First, delete any old entries from the raw table which have new records
 -- This might be better than using row_number() after inserting the new data into the raw table because the set of PKs to consider will likely be smaller.  The trade is a second round of SAFE_CAST. if that's fast, it might be a good idea
 
 DELETE FROM Z_AIRBYTE.USERS_RAW
@@ -108,7 +117,7 @@ WHERE "_airbyte_raw_id" IN (
 AND "_airbyte_typed_at" IS NOT NULL
 ;
 
--- Step 3: Also, delete any old entries from the typed table which have new records
+-- Step 4: Also, delete any old entries from the typed table which have new records
 
 DELETE FROM PUBLIC.USERS
 WHERE "id" in (
@@ -120,7 +129,7 @@ WHERE "id" in (
 ;
 
 
--- Step 3: Type the Data & handle errors
+-- Step 5: Type the Data & handle errors
 -- Note: We know the column names from the schema, so we don't need to anything refelxive to look up the column names
 -- Don't insert rows which have been deleted by CDC
 
@@ -147,7 +156,7 @@ WHERE
 	AND "_airbyte_data":"_ab_cdc_deleted_at" IS NULL -- Skip CDC deleted rows (old records are already cleared away above
 ;
 
--- Step 4: Apply typed_at timestamp where needed
+-- Step 6: Apply typed_at timestamp where needed
 UPDATE Z_AIRBYTE.USERS_RAW
 SET "_airbyte_typed_at" = CURRENT_TIMESTAMP()
 WHERE "_airbyte_typed_at" IS NULL
@@ -193,10 +202,19 @@ INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_r
 		zip: "94003"
 } }$$), UUID_STRING(), CURRENT_TIMESTAMP();
 
+-- Step 2: Validate the incoming data
+-- We can't really do this properly in the pure-SQL example here, but we should throw if any row doesn't have a PK
+SELECT COUNT(1)
+FROM Z_AIRBYTE.USERS_RAW
+WHERE
+	"_airbyte_typed_at" IS NULL
+	AND TRY_CAST("_airbyte_data":"id"::text AS INT) IS NULL
+;
+
 -- Moving the data and deduping happens in a transaction to prevent duplicates from appearing
 BEGIN;
 
--- Step 2: First, delete any old entries from the raw table which have new records
+-- Step 3: First, delete any old entries from the raw table which have new records
 -- This might be better than using row_number() after inserting the new data into the raw table because the set of PKs to consider will likely be smaller.  The trade is a second round of SAFE_CAST. if that's fast, it might be a good idea
 
 DELETE FROM Z_AIRBYTE.USERS_RAW
@@ -213,7 +231,7 @@ WHERE "_airbyte_raw_id" IN (
 AND "_airbyte_typed_at" IS NOT NULL
 ;
 
--- Step 3: Also, delete any old entries from the typed table which have new records
+-- Step 4: Also, delete any old entries from the typed table which have new records
 
 DELETE FROM PUBLIC.USERS
 WHERE "id" in (
@@ -225,7 +243,7 @@ WHERE "id" in (
 ;
 
 
--- Step 3: Type the Data & handle errors
+-- Step 5: Type the Data & handle errors
 -- Note: We know the column names from the schema, so we don't need to anything refelxive to look up the column names
 -- Don't insert rows which have been deleted by CDC
 
@@ -252,14 +270,13 @@ WHERE
 	AND "_airbyte_data":"_ab_cdc_deleted_at" IS NULL -- Skip CDC deleted rows (old records are already cleared away above
 ;
 
--- Step 4: Apply typed_at timestamp where needed
+-- Step 6: Apply typed_at timestamp where needed
 UPDATE Z_AIRBYTE.USERS_RAW
 SET "_airbyte_typed_at" = CURRENT_TIMESTAMP()
 WHERE "_airbyte_typed_at" IS NULL
 ;
 
 COMMIT;
-
 ----------------------------
 --------- SYNC 3 -----------
 ----------------------------
@@ -273,7 +290,7 @@ CREATE TABLE IF NOT EXISTS Z_AIRBYTE.USERS_RAW (
     "_airbyte_read_at" timestamp NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_typed_at" timestamp -- Airbyte column
 );
-
+;
 
 -- Step 1: Load the raw data
 -- Delete row 1 with CDC
@@ -288,10 +305,19 @@ INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_r
 		zip: "99999"
 } }$$), UUID_STRING(), CURRENT_TIMESTAMP();
 
+-- Step 2: Validate the incoming data
+-- We can't really do this properly in the pure-SQL example here, but we should throw if any row doesn't have a PK
+SELECT COUNT(1)
+FROM Z_AIRBYTE.USERS_RAW
+WHERE
+	"_airbyte_typed_at" IS NULL
+	AND TRY_CAST("_airbyte_data":"id"::text AS INT) IS NULL
+;
+
 -- Moving the data and deduping happens in a transaction to prevent duplicates from appearing
 BEGIN;
 
--- Step 2: First, delete any old entries from the raw table which have new records
+-- Step 3: First, delete any old entries from the raw table which have new records
 -- This might be better than using row_number() after inserting the new data into the raw table because the set of PKs to consider will likely be smaller.  The trade is a second round of SAFE_CAST. if that's fast, it might be a good idea
 
 DELETE FROM Z_AIRBYTE.USERS_RAW
@@ -308,7 +334,7 @@ WHERE "_airbyte_raw_id" IN (
 AND "_airbyte_typed_at" IS NOT NULL
 ;
 
--- Step 3: Also, delete any old entries from the typed table which have new records
+-- Step 4: Also, delete any old entries from the typed table which have new records
 
 DELETE FROM PUBLIC.USERS
 WHERE "id" in (
@@ -320,7 +346,7 @@ WHERE "id" in (
 ;
 
 
--- Step 3: Type the Data & handle errors
+-- Step 5: Type the Data & handle errors
 -- Note: We know the column names from the schema, so we don't need to anything refelxive to look up the column names
 -- Don't insert rows which have been deleted by CDC
 
@@ -347,7 +373,7 @@ WHERE
 	AND "_airbyte_data":"_ab_cdc_deleted_at" IS NULL -- Skip CDC deleted rows (old records are already cleared away above
 ;
 
--- Step 4: Apply typed_at timestamp where needed
+-- Step 6: Apply typed_at timestamp where needed
 UPDATE Z_AIRBYTE.USERS_RAW
 SET "_airbyte_typed_at" = CURRENT_TIMESTAMP()
 WHERE "_airbyte_typed_at" IS NULL

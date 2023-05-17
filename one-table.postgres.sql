@@ -134,10 +134,19 @@ INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_r
 INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_read_at") VALUES ('{   "id": 3,   "first_name": "Edward",   "age": 40,   "address": {     "city": "Sunyvale",     "zip": "94003"   } }', gen_random_uuid(), NOW());
 INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_read_at") VALUES ('{   "id": 4,   "first_name": "Joe",   "address": {     "city": "Seattle",     "zip": "98999"   } }', gen_random_uuid(), NOW()); -- Joe is missing an age, null OK
 
+-- Step 2: Validate the incoming data
+-- We can't really do this properly in the pure-SQL example here, but we should throw if any row doesn't have a PK
+SELECT COUNT(1)
+FROM Z_AIRBYTE.USERS_RAW
+WHERE
+	"_airbyte_typed_at" IS NULL
+	AND _airbyte_safe_cast_to_integer(_airbyte_data ->> 'id') IS NULL
+;
+
 -- Moving the data and deduping happens in a transaction to prevent duplicates from appearing
 BEGIN;
 
--- Step 2: First, delete any old entries from the raw table which have new records
+-- Step 3: First, delete any old entries from the raw table which have new records
 -- This might be better than using row_number() after inserting the new data into the raw table because the set of PKs to consider will likely be smaller.  The trade is a second round of SAFE_CAST. if that's fast, it might be a good idea
 
 DELETE FROM z_airbyte.users_raw
@@ -154,7 +163,7 @@ WHERE _airbyte_raw_id IN (
 AND _airbyte_typed_at IS NOT NULL
 ;
 
--- Step 3: Also, delete any old entries from the typed table which have new records
+-- Step 4: Also, delete any old entries from the typed table which have new records
 
 DELETE FROM public.users
 WHERE id in (
@@ -166,7 +175,7 @@ WHERE id in (
 ;
 
 
--- Step 3: Type the Data & handle errors
+-- Step 5: Type the Data & handle errors
 -- Note: We know the column names from the schema, so we don't need to anything refelxive to look up the column names
 -- Don't insert rows which have been deleted by CDC
 
@@ -191,7 +200,7 @@ WHERE
 	AND _airbyte_data ->> '_ab_cdc_deleted_at' IS NULL -- Skip CDC deleted rows (old records are already cleared away above
 ;
 
--- Step 4: Apply typed_at timestamp where needed
+-- Step 6: Apply typed_at timestamp where needed
 UPDATE z_airbyte.users_raw
 SET _airbyte_typed_at = NOW()
 WHERE _airbyte_typed_at IS NULL
@@ -225,10 +234,19 @@ CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_typed_at" ON z_airbyte.users_
 INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_read_at") VALUES ('{   "id": 2,   "first_name": "Brian",   "age": 39,   "address": {     "city": "Menlo Park",     "zip": "99999"   } }', gen_random_uuid(), NOW());
 INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_read_at") VALUES ('{   "id": 3,   "first_name": "Edward",   "age": "forty",   "address": {     "city": "Sunyvale",     "zip": "94003"   } }', gen_random_uuid(), NOW());
 
+-- Step 2: Validate the incoming data
+-- We can't really do this properly in the pure-SQL example here, but we should throw if any row doesn't have a PK
+SELECT COUNT(1)
+FROM Z_AIRBYTE.USERS_RAW
+WHERE
+	"_airbyte_typed_at" IS NULL
+	AND _airbyte_safe_cast_to_integer(_airbyte_data ->> 'id') IS NULL
+;
+
 -- Moving the data and deduping happens in a transaction to prevent duplicates from appearing
 BEGIN;
 
--- Step 2: First, delete any old entries from the raw table which have new records
+-- Step 3: First, delete any old entries from the raw table which have new records
 -- This might be better than using row_number() after inserting the new data into the raw table because the set of PKs to consider will likely be smaller.  The trade is a second round of SAFE_CAST. if that's fast, it might be a good idea
 
 DELETE FROM z_airbyte.users_raw
@@ -245,7 +263,7 @@ WHERE _airbyte_raw_id IN (
 AND _airbyte_typed_at IS NOT NULL
 ;
 
--- Step 3: Also, delete any old entries from the typed table which have new records
+-- Step 4: Also, delete any old entries from the typed table which have new records
 
 DELETE FROM public.users
 WHERE id in (
@@ -257,7 +275,7 @@ WHERE id in (
 ;
 
 
--- Step 3: Type the Data & handle errors
+-- Step 5: Type the Data & handle errors
 -- Note: We know the column names from the schema, so we don't need to anything refelxive to look up the column names
 -- Don't insert rows which have been deleted by CDC
 
@@ -282,7 +300,7 @@ WHERE
 	AND _airbyte_data ->> '_ab_cdc_deleted_at' IS NULL -- Skip CDC deleted rows (old records are already cleared away above
 ;
 
--- Step 4: Apply typed_at timestamp where needed
+-- Step 6: Apply typed_at timestamp where needed
 UPDATE z_airbyte.users_raw
 SET _airbyte_typed_at = NOW()
 WHERE _airbyte_typed_at IS NULL
@@ -312,10 +330,19 @@ CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_typed_at" ON z_airbyte.users_
 
 INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_read_at") VALUES ('{   "id": 2,   "first_name": "Brian",   "age": 39,   "address": {     "city": "Menlo Park",     "zip": "99999"   }, "_ab_cdc_deleted_at": true}', gen_random_uuid(), NOW());
 
+-- Step 2: Validate the incoming data
+-- We can't really do this properly in the pure-SQL example here, but we should throw if any row doesn't have a PK
+SELECT COUNT(1)
+FROM Z_AIRBYTE.USERS_RAW
+WHERE
+	"_airbyte_typed_at" IS NULL
+	AND _airbyte_safe_cast_to_integer(_airbyte_data ->> 'id') IS NULL
+;
+
 -- Moving the data and deduping happens in a transaction to prevent duplicates from appearing
 BEGIN;
 
--- Step 2: First, delete any old entries from the raw table which have new records
+-- Step 3: First, delete any old entries from the raw table which have new records
 -- This might be better than using row_number() after inserting the new data into the raw table because the set of PKs to consider will likely be smaller.  The trade is a second round of SAFE_CAST. if that's fast, it might be a good idea
 
 DELETE FROM z_airbyte.users_raw
@@ -332,7 +359,7 @@ WHERE _airbyte_raw_id IN (
 AND _airbyte_typed_at IS NOT NULL
 ;
 
--- Step 3: Also, delete any old entries from the typed table which have new records
+-- Step 4: Also, delete any old entries from the typed table which have new records
 
 DELETE FROM public.users
 WHERE id in (
@@ -344,7 +371,7 @@ WHERE id in (
 ;
 
 
--- Step 3: Type the Data & handle errors
+-- Step 5: Type the Data & handle errors
 -- Note: We know the column names from the schema, so we don't need to anything refelxive to look up the column names
 -- Don't insert rows which have been deleted by CDC
 
@@ -369,7 +396,7 @@ WHERE
 	AND _airbyte_data ->> '_ab_cdc_deleted_at' IS NULL -- Skip CDC deleted rows (old records are already cleared away above
 ;
 
--- Step 4: Apply typed_at timestamp where needed
+-- Step 6: Apply typed_at timestamp where needed
 UPDATE z_airbyte.users_raw
 SET _airbyte_typed_at = NOW()
 WHERE _airbyte_typed_at IS NULL
