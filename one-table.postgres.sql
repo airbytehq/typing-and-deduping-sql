@@ -123,9 +123,9 @@ CREATE TABLE IF NOT EXISTS z_airbyte.users_raw (
     "_airbyte_read_at" timestamp NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_typed_at" timestamp -- Airbyte column
 );
-CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_raw_id" ON public.users USING BTREE ("_airbyte_raw_id");
-CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_read_at" ON public.users USING BTREE ("_airbyte_read_at");
-CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_typed_at" ON public.users USING BTREE ("_airbyte_typed_at");
+CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_raw_id" ON z_airbyte.users_raw USING BTREE ("_airbyte_raw_id");
+CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_read_at" ON z_airbyte.users_raw USING BTREE ("_airbyte_read_at");
+CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_typed_at" ON z_airbyte.users_raw USING BTREE ("_airbyte_typed_at");
 
 -- Step 1: Load the raw data
 
@@ -134,11 +134,50 @@ INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_r
 INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_read_at") VALUES ('{   "id": 3,   "first_name": "Edward",   "age": 40,   "address": {     "city": "Sunyvale",     "zip": "94003"   } }', gen_random_uuid(), NOW());
 INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_read_at") VALUES ('{   "id": 4,   "first_name": "Joe",   "address": {     "city": "Seattle",     "zip": "98999"   } }', gen_random_uuid(), NOW()); -- Joe is missing an age, null OK
 
+-- Step 2: Validate the incoming data
+-- We can't really do this properly in the pure-SQL example here, but we should throw if any row doesn't have a PK
+SELECT COUNT(1)
+FROM Z_AIRBYTE.USERS_RAW
+WHERE
+	"_airbyte_typed_at" IS NULL
+	AND _airbyte_safe_cast_to_integer(_airbyte_data ->> 'id') IS NULL
+;
+
 -- Moving the data and deduping happens in a transaction to prevent duplicates from appearing
 BEGIN;
 
--- Step 2: Type the Data & handle errors
+-- Step 3: First, delete any old entries from the raw table which have new records
+-- This might be better than using row_number() after inserting the new data into the raw table because the set of PKs to consider will likely be smaller.  The trade is a second round of SAFE_CAST. if that's fast, it might be a good idea
+
+DELETE FROM z_airbyte.users_raw
+WHERE _airbyte_raw_id IN (
+	SELECT _airbyte_raw_id
+	FROM public.users
+	WHERE
+		id IN (
+			SELECT _airbyte_safe_cast_to_integer(_airbyte_data ->> 'id') as id
+			FROM z_airbyte.users_raw
+			WHERE _airbyte_typed_at IS NULL -- considering only new/null values, we can recover from failed previous checkpoints
+		)
+)
+AND _airbyte_typed_at IS NOT NULL
+;
+
+-- Step 4: Also, delete any old entries from the typed table which have new records
+
+DELETE FROM public.users
+WHERE id in (
+	SELECT
+		_airbyte_safe_cast_to_integer(_airbyte_data ->> 'id') as id
+	FROM z_airbyte.users_raw
+	WHERE _airbyte_typed_at IS NULL -- considering only new/null values, we can recover from failed previous checkpoints
+)
+;
+
+
+-- Step 5: Type the Data & handle errors
 -- Note: We know the column names from the schema, so we don't need to anything refelxive to look up the column names
+-- Don't insert rows which have been deleted by CDC
 
 INSERT INTO public.users
 SELECT
@@ -157,38 +196,8 @@ SELECT
 	_airbyte_read_at
 FROM z_airbyte.users_raw
 WHERE
-	_airbyte_typed_at IS NULL -- inserting only null values, we can recover from failed previous checkpoints
-;
-
--- Step 3: De-dupe Typed Table
--- ... assuming the user wanted dedupe
--- NOTE: Postgres doesn't "need" _airbyte_raw_id and could use ctid, but to match cloud DWs, that's what we use in this example
-WITH cte AS (
-	SELECT _airbyte_raw_id, row_number() OVER (
-		PARTITION BY id ORDER BY _airbyte_read_at DESC
-	) as row_number FROM public.users
-)
-
-DELETE FROM public.users
-WHERE _airbyte_raw_id in (
-	SELECT _airbyte_raw_id FROM cte WHERE row_number != 1
-)
-;
-
--- Step 4: Deal with CDC Deletion (and other special cases)
-DELETE FROM public.users WHERE id IN (
-	SELECT
-		_airbyte_safe_cast_to_integer(_airbyte_data ->> 'id') as id -- based on the PK which we know from the connector catalog
-	FROM z_airbyte.users_raw
-	WHERE _airbyte_data ->> '_ab_cdc_deleted_at' IS NOT NULL
-)
-;
-
--- Step 5: Remove old entries from Raw table
-DELETE FROM z_airbyte.users_raw
-WHERE _airbyte_raw_id NOT IN (
-	SELECT _airbyte_raw_id FROM public.users
-)
+	_airbyte_typed_at IS NULL -- inserting only new/null values, we can recover from failed previous checkpoints
+	AND _airbyte_data ->> '_ab_cdc_deleted_at' IS NULL -- Skip CDC deleted rows (old records are already cleared away above
 ;
 
 -- Step 6: Apply typed_at timestamp where needed
@@ -196,7 +205,6 @@ UPDATE z_airbyte.users_raw
 SET _airbyte_typed_at = NOW()
 WHERE _airbyte_typed_at IS NULL
 ;
-
 
 COMMIT;
 
@@ -213,9 +221,9 @@ CREATE TABLE IF NOT EXISTS z_airbyte.users_raw (
     "_airbyte_read_at" timestamp NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_typed_at" timestamp -- Airbyte column
 );
-CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_raw_id" ON public.users USING BTREE ("_airbyte_raw_id");
-CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_read_at" ON public.users USING BTREE ("_airbyte_read_at");
-CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_typed_at" ON public.users USING BTREE ("_airbyte_typed_at");
+CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_raw_id" ON z_airbyte.users_raw USING BTREE ("_airbyte_raw_id");
+CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_read_at" ON z_airbyte.users_raw USING BTREE ("_airbyte_read_at");
+CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_typed_at" ON z_airbyte.users_raw USING BTREE ("_airbyte_typed_at");
 
 -- Step 1: Load the raw data
 -- No update for Evan (user 1)
@@ -226,11 +234,50 @@ CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_typed_at" ON public.users USI
 INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_read_at") VALUES ('{   "id": 2,   "first_name": "Brian",   "age": 39,   "address": {     "city": "Menlo Park",     "zip": "99999"   } }', gen_random_uuid(), NOW());
 INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_read_at") VALUES ('{   "id": 3,   "first_name": "Edward",   "age": "forty",   "address": {     "city": "Sunyvale",     "zip": "94003"   } }', gen_random_uuid(), NOW());
 
+-- Step 2: Validate the incoming data
+-- We can't really do this properly in the pure-SQL example here, but we should throw if any row doesn't have a PK
+SELECT COUNT(1)
+FROM Z_AIRBYTE.USERS_RAW
+WHERE
+	"_airbyte_typed_at" IS NULL
+	AND _airbyte_safe_cast_to_integer(_airbyte_data ->> 'id') IS NULL
+;
+
 -- Moving the data and deduping happens in a transaction to prevent duplicates from appearing
 BEGIN;
 
--- Step 2: Type the Data & handle errors
+-- Step 3: First, delete any old entries from the raw table which have new records
+-- This might be better than using row_number() after inserting the new data into the raw table because the set of PKs to consider will likely be smaller.  The trade is a second round of SAFE_CAST. if that's fast, it might be a good idea
+
+DELETE FROM z_airbyte.users_raw
+WHERE _airbyte_raw_id IN (
+	SELECT _airbyte_raw_id
+	FROM public.users
+	WHERE
+		id IN (
+			SELECT _airbyte_safe_cast_to_integer(_airbyte_data ->> 'id') as id
+			FROM z_airbyte.users_raw
+			WHERE _airbyte_typed_at IS NULL -- considering only new/null values, we can recover from failed previous checkpoints
+		)
+)
+AND _airbyte_typed_at IS NOT NULL
+;
+
+-- Step 4: Also, delete any old entries from the typed table which have new records
+
+DELETE FROM public.users
+WHERE id in (
+	SELECT
+		_airbyte_safe_cast_to_integer(_airbyte_data ->> 'id') as id
+	FROM z_airbyte.users_raw
+	WHERE _airbyte_typed_at IS NULL -- considering only new/null values, we can recover from failed previous checkpoints
+)
+;
+
+
+-- Step 5: Type the Data & handle errors
 -- Note: We know the column names from the schema, so we don't need to anything refelxive to look up the column names
+-- Don't insert rows which have been deleted by CDC
 
 INSERT INTO public.users
 SELECT
@@ -249,38 +296,8 @@ SELECT
 	_airbyte_read_at
 FROM z_airbyte.users_raw
 WHERE
-	_airbyte_typed_at IS NULL -- inserting only null values, we can recover from failed previous checkpoints
-;
-
--- Step 3: De-dupe Typed Table
--- ... assuming the user wanted dedupe
--- NOTE: Postgres doesn't "need" _airbyte_raw_id and could use ctid, but to match cloud DWs, that's what we use in this example
-WITH cte AS (
-	SELECT _airbyte_raw_id, row_number() OVER (
-		PARTITION BY id ORDER BY _airbyte_read_at DESC
-	) as row_number FROM public.users
-)
-
-DELETE FROM public.users
-WHERE _airbyte_raw_id in (
-	SELECT _airbyte_raw_id FROM cte WHERE row_number != 1
-)
-;
-
--- Step 4: Deal with CDC Deletion (and other special cases)
-DELETE FROM public.users WHERE id IN (
-	SELECT
-		_airbyte_safe_cast_to_integer(_airbyte_data ->> 'id') as id -- based on the PK which we know from the connector catalog
-	FROM z_airbyte.users_raw
-	WHERE _airbyte_data ->> '_ab_cdc_deleted_at' IS NOT NULL
-)
-;
-
--- Step 5: Remove old entries from Raw table
-DELETE FROM z_airbyte.users_raw
-WHERE _airbyte_raw_id NOT IN (
-	SELECT _airbyte_raw_id FROM public.users
-)
+	_airbyte_typed_at IS NULL -- inserting only new/null values, we can recover from failed previous checkpoints
+	AND _airbyte_data ->> '_ab_cdc_deleted_at' IS NULL -- Skip CDC deleted rows (old records are already cleared away above
 ;
 
 -- Step 6: Apply typed_at timestamp where needed
@@ -288,7 +305,6 @@ UPDATE z_airbyte.users_raw
 SET _airbyte_typed_at = NOW()
 WHERE _airbyte_typed_at IS NULL
 ;
-
 
 COMMIT;
 
@@ -305,20 +321,59 @@ CREATE TABLE IF NOT EXISTS z_airbyte.users_raw (
     "_airbyte_read_at" timestamp NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_typed_at" timestamp -- Airbyte column
 );
-CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_raw_id" ON public.users USING BTREE ("_airbyte_raw_id");
-CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_read_at" ON public.users USING BTREE ("_airbyte_read_at");
-CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_typed_at" ON public.users USING BTREE ("_airbyte_typed_at");
+CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_raw_id" ON z_airbyte.users_raw USING BTREE ("_airbyte_raw_id");
+CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_read_at" ON z_airbyte.users_raw USING BTREE ("_airbyte_read_at");
+CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_typed_at" ON z_airbyte.users_raw USING BTREE ("_airbyte_typed_at");
 
 -- Step 1: Load the raw data
 -- Delete row 1 with CDC
 
 INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_read_at") VALUES ('{   "id": 2,   "first_name": "Brian",   "age": 39,   "address": {     "city": "Menlo Park",     "zip": "99999"   }, "_ab_cdc_deleted_at": true}', gen_random_uuid(), NOW());
 
+-- Step 2: Validate the incoming data
+-- We can't really do this properly in the pure-SQL example here, but we should throw if any row doesn't have a PK
+SELECT COUNT(1)
+FROM Z_AIRBYTE.USERS_RAW
+WHERE
+	"_airbyte_typed_at" IS NULL
+	AND _airbyte_safe_cast_to_integer(_airbyte_data ->> 'id') IS NULL
+;
+
 -- Moving the data and deduping happens in a transaction to prevent duplicates from appearing
 BEGIN;
 
--- Step 2: Type the Data & handle errors
+-- Step 3: First, delete any old entries from the raw table which have new records
+-- This might be better than using row_number() after inserting the new data into the raw table because the set of PKs to consider will likely be smaller.  The trade is a second round of SAFE_CAST. if that's fast, it might be a good idea
+
+DELETE FROM z_airbyte.users_raw
+WHERE _airbyte_raw_id IN (
+	SELECT _airbyte_raw_id
+	FROM public.users
+	WHERE
+		id IN (
+			SELECT _airbyte_safe_cast_to_integer(_airbyte_data ->> 'id') as id
+			FROM z_airbyte.users_raw
+			WHERE _airbyte_typed_at IS NULL -- considering only new/null values, we can recover from failed previous checkpoints
+		)
+)
+AND _airbyte_typed_at IS NOT NULL
+;
+
+-- Step 4: Also, delete any old entries from the typed table which have new records
+
+DELETE FROM public.users
+WHERE id in (
+	SELECT
+		_airbyte_safe_cast_to_integer(_airbyte_data ->> 'id') as id
+	FROM z_airbyte.users_raw
+	WHERE _airbyte_typed_at IS NULL -- considering only new/null values, we can recover from failed previous checkpoints
+)
+;
+
+
+-- Step 5: Type the Data & handle errors
 -- Note: We know the column names from the schema, so we don't need to anything refelxive to look up the column names
+-- Don't insert rows which have been deleted by CDC
 
 INSERT INTO public.users
 SELECT
@@ -337,38 +392,8 @@ SELECT
 	_airbyte_read_at
 FROM z_airbyte.users_raw
 WHERE
-	_airbyte_typed_at IS NULL -- inserting only null values, we can recover from failed previous checkpoints
-;
-
--- Step 3: De-dupe Typed Table
--- ... assuming the user wanted dedupe
--- NOTE: Postgres doesn't "need" _airbyte_raw_id and could use ctid, but to match cloud DWs, that's what we use in this example
-WITH cte AS (
-	SELECT _airbyte_raw_id, row_number() OVER (
-		PARTITION BY id ORDER BY _airbyte_read_at DESC
-	) as row_number FROM public.users
-)
-
-DELETE FROM public.users
-WHERE _airbyte_raw_id in (
-	SELECT _airbyte_raw_id FROM cte WHERE row_number != 1
-)
-;
-
--- Step 4: Deal with CDC Deletion (and other special cases)
-DELETE FROM public.users WHERE id IN (
-	SELECT
-		_airbyte_safe_cast_to_integer(_airbyte_data ->> 'id') as id -- based on the PK which we know from the connector catalog
-	FROM z_airbyte.users_raw
-	WHERE _airbyte_data ->> '_ab_cdc_deleted_at' IS NOT NULL
-)
-;
-
--- Step 5: Remove old entries from Raw table
-DELETE FROM z_airbyte.users_raw
-WHERE _airbyte_raw_id NOT IN (
-	SELECT _airbyte_raw_id FROM public.users
-)
+	_airbyte_typed_at IS NULL -- inserting only new/null values, we can recover from failed previous checkpoints
+	AND _airbyte_data ->> '_ab_cdc_deleted_at' IS NULL -- Skip CDC deleted rows (old records are already cleared away above
 ;
 
 -- Step 6: Apply typed_at timestamp where needed
@@ -376,6 +401,5 @@ UPDATE z_airbyte.users_raw
 SET _airbyte_typed_at = NOW()
 WHERE _airbyte_typed_at IS NULL
 ;
-
 
 COMMIT;
