@@ -18,14 +18,24 @@ Read more about this in the [PRD](https://docs.google.com/document/d/126SLzFLMS2
 If you want to seed a big test database:
 
 ```sql
--- Create the table
+-- Create the tables
+CREATE TABLE PUBLIC.USERS (
+    "id" int PRIMARY KEY, -- PK cannot be null, but after raw insert and before typing, row will be null
+    "first_name" text,
+    "age" int,
+    "address" variant,
+    "_airbyte_meta" variant NOT NULL, -- Airbyte column, cannot be null
+    "_airbyte_raw_id" VARCHAR(36) NOT NULL, -- Airbyte column, cannot be null
+    "_airbyte_read_at" timestamp NOT NULL -- Airbyte column, cannot be null
+);
 CREATE SCHEMA IF NOT EXISTS Z_AIRBYTE;
 CREATE TABLE IF NOT EXISTS Z_AIRBYTE.USERS_RAW (
-    "_airbyte_raw_id" VARCHAR(36) NOT NULL, -- Airbyte column, cannot be null
+    "_airbyte_raw_id" VARCHAR(36) NOT NULL PRIMARY KEY, -- Airbyte column, cannot be null
     "_airbyte_data" variant NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_read_at" timestamp NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_typed_at" timestamp -- Airbyte column
 );
+TRUNCATE TABLE PUBLIC.USERS;
 TRUNCATE TABLE Z_AIRBYTE.USERS_RAW;
 
 -- Load in the data (CSV)
@@ -34,6 +44,11 @@ FROM 'gcs://airbyte-performance-testing-public/typing-deduping-testing/users_raw
 FILE_FORMAT = (TYPE = 'CSV' FIELD_DELIMITER = '\t' SKIP_HEADER = 1 ERROR_ON_COLUMN_COUNT_MISMATCH = FALSE)
 FORCE = TRUE
 PURGE = FALSE
+;
+-- update the _airbyte_raw_ids each time
+UPDATE Z_AIRBYTE.USERS_RAW
+SET "_airbyte_raw_id" = UUID_STRING()
+WHERE "_airbyte_typed_at" IS NULL
 ;
 ```
 
@@ -48,6 +63,11 @@ FROM 'gcs://airbyte-performance-testing-public/typing-deduping-testing/users_raw
 FILE_FORMAT = (TYPE = 'CSV' FIELD_DELIMITER = '\t' SKIP_HEADER = 1 ERROR_ON_COLUMN_COUNT_MISMATCH = FALSE)
 FORCE = TRUE
 PURGE = FALSE
+;
+-- update the _airbyte_raw_ids each time
+UPDATE Z_AIRBYTE.USERS_RAW
+SET "_airbyte_raw_id" = UUID_STRING()
+WHERE "_airbyte_typed_at" IS NULL
 ;
 ```
 
