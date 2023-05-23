@@ -441,3 +441,5 @@ You should have the latest data for each user in the typed final table:
   * User #5 (Cynthia) has one entry dispite the multiple insertes, with the latest entry (age=42)
 
 */
+
+SELECT CURRENT_TIMESTAMP();
