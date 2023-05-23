@@ -4,6 +4,15 @@ This repo is a playground for experimenting with different ways of typing and de
 
 Read more about this in the [PRD](https://docs.google.com/document/d/126SLzFLMS2QYXHAItx1cn03aj0HMuuDlajlUAVFtSIM/edit).
 
+## Normalization Jobs Checklist
+
+- [ ] Accepts batches of new data and types them safely while inserting the data into the final table
+- [ ] Handles deduplication
+- [ ] Handles per-row typing errors safely
+- [ ] Handles composite primary keys
+- [ ] Handles deduplication when multiple entries for a PK exist in the same batch
+- [ ] Handles deduplication when multiple entries for a PK when inserted out-of-order across different batches
+
 ## Snowflake Testing Notes.
 
 If you want to seed a big test database:

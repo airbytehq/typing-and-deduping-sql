@@ -27,9 +27,10 @@ KNOWN LIMITATIONS
 -- Assumption: We can build the table at the start of the sync based only on the schema we get from the source/configured catalog
 
 DROP TABLE IF EXISTS PUBLIC.USERS;
+DROP TABLE IF EXISTS Z_AIRBYTE.USERS_RAW;
 
 CREATE TABLE PUBLIC.USERS (
-    "id" int, -- PK cannot be null, but after raw insert and before typing, row will be null
+    "id" int PRIMARY KEY, -- PK cannot be null, but after raw insert and before typing, row will be null
     "first_name" text,
     "age" int,
     "address" variant,
@@ -46,7 +47,7 @@ CREATE TABLE PUBLIC.USERS (
 
 CREATE SCHEMA IF NOT EXISTS Z_AIRBYTE;
 CREATE TABLE IF NOT EXISTS Z_AIRBYTE.USERS_RAW (
-    "_airbyte_raw_id" VARCHAR(36) NOT NULL, -- Airbyte column, cannot be null
+    "_airbyte_raw_id" VARCHAR(36) NOT NULL PRIMARY KEY, -- Airbyte column, cannot be null
     "_airbyte_data" variant NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_read_at" timestamp NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_typed_at" timestamp -- Airbyte column
@@ -100,39 +101,7 @@ WHERE
 -- Moving the data and deduping happens in a transaction to prevent duplicates from appearing
 BEGIN;
 
--- Step 3: First, delete any old entries from the raw table which have new records
--- This might be better than using row_number() after inserting the new data into the raw table because the set of PKs to consider will likely be smaller.  The trade is a second round of SAFE_CAST. if that's fast, it might be a good idea
-
-DELETE FROM Z_AIRBYTE.USERS_RAW
-WHERE "_airbyte_raw_id" IN (
-	SELECT "_airbyte_raw_id"
-	FROM PUBLIC.USERS
-	WHERE
-		"id" IN (
-			SELECT TRY_CAST("_airbyte_data":"id"::text AS INT) as id
-			FROM Z_AIRBYTE.USERS_RAW
-			WHERE "_airbyte_typed_at" IS NULL -- considering only new/null values, we can recover from failed previous checkpoints
-		)
-)
-AND "_airbyte_typed_at" IS NOT NULL
-;
-
--- Step 4: Also, delete any old entries from the typed table which have new records
-
-DELETE FROM PUBLIC.USERS
-WHERE "id" in (
-	SELECT
-		TRY_CAST("_airbyte_data":"id"::text AS INT) as id
-	FROM Z_AIRBYTE.USERS_RAW
-	WHERE "_airbyte_typed_at" IS NULL -- considering only new/null values, we can recover from failed previous checkpoints
-)
-;
-
-
--- Step 5: Type the Data & handle errors
--- Note: We know the column names from the schema, so we don't need to anything refelxive to look up the column names
--- Don't insert rows which have been deleted by CDC
-
+-- Step 3: Move the new data to the typed table
 INSERT INTO PUBLIC.USERS
 SELECT
 	TRY_CAST("_airbyte_data":"id"::text AS INT) as id,
@@ -154,6 +123,42 @@ FROM Z_AIRBYTE.USERS_RAW
 WHERE
 	"_airbyte_typed_at" IS NULL -- inserting only new/null values, we can recover from failed previous checkpoints
 	AND "_airbyte_data":"_ab_cdc_deleted_at" IS NULL -- Skip CDC deleted rows (old records are already cleared away above
+;
+
+-- Step 4: Dedupe and clean the typed table
+-- This is a full table scan, but we need to do it this way to merge the new rows with the old to:
+--   * Consider the case in which there are multiple entries for the same PK in the new insert batch
+--	 * Consider the case in which the data in the new batch is older than the data in the typed table, and we only want to keep the newer (pre-existing) data
+
+DELETE FROM PUBLIC.USERS
+WHERE
+	-- Delete any rows which are not the most recent for a given PK
+	"_airbyte_raw_id" IN (
+		SELECT "_airbyte_raw_id" FROM (
+			SELECT "_airbyte_raw_id", row_number() OVER (
+				PARTITION BY "id" ORDER BY "_airbyte_read_at" DESC
+			) as row_number FROM PUBLIC.USERS
+		)
+		WHERE row_number != 1
+	)
+	OR
+	-- Delete rows that have been CDC deleted
+	id IN (
+		SELECT
+			TRY_CAST("_airbyte_data":"id"::text AS INT) as id -- based on the PK which we know from the connector catalog
+		FROM Z_AIRBYTE.USERS_RAW
+		WHERE "_airbyte_data":"_ab_cdc_deleted_at" IS NOT NULL
+	)
+;
+
+-- Step 5: Remove old entries from Raw table
+DELETE FROM Z_AIRBYTE.USERS_RAW
+WHERE
+	"_airbyte_raw_id" NOT IN (
+		SELECT "_airbyte_raw_id" FROM PUBLIC.USERS
+	)
+	AND
+	"_airbyte_data":"_ab_cdc_deleted_at" IS NULL -- we want to keep the final _ab_cdc_deleted_at=true entry in the raw table for the deleted record
 ;
 
 -- Step 6: Apply typed_at timestamp where needed
@@ -180,11 +185,19 @@ CREATE TABLE IF NOT EXISTS Z_AIRBYTE.USERS_RAW (
 
 
 -- Step 1: Load the raw data
--- No update for Evan (user 1)
+-- Age update for Evan (user 1)
 -- There is an update for Brian (user 2, new address.zip)
 -- There is an update for Edward (user 3, age is invalid)
 -- No update for Joe (user 4)
 
+INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_read_at") SELECT PARSE_JSON($${
+	id: 1,
+	first_name: "Evan",
+	age: 39,
+	address:{
+		city: "San Francisco",
+		zip: "94001"
+} }$$), UUID_STRING(), CURRENT_TIMESTAMP();
 INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_read_at") SELECT PARSE_JSON($${
 	id: 2,
 	first_name: "Brian",
@@ -214,39 +227,7 @@ WHERE
 -- Moving the data and deduping happens in a transaction to prevent duplicates from appearing
 BEGIN;
 
--- Step 3: First, delete any old entries from the raw table which have new records
--- This might be better than using row_number() after inserting the new data into the raw table because the set of PKs to consider will likely be smaller.  The trade is a second round of SAFE_CAST. if that's fast, it might be a good idea
-
-DELETE FROM Z_AIRBYTE.USERS_RAW
-WHERE "_airbyte_raw_id" IN (
-	SELECT "_airbyte_raw_id"
-	FROM PUBLIC.USERS
-	WHERE
-		"id" IN (
-			SELECT TRY_CAST("_airbyte_data":"id"::text AS INT) as id
-			FROM Z_AIRBYTE.USERS_RAW
-			WHERE "_airbyte_typed_at" IS NULL -- considering only new/null values, we can recover from failed previous checkpoints
-		)
-)
-AND "_airbyte_typed_at" IS NOT NULL
-;
-
--- Step 4: Also, delete any old entries from the typed table which have new records
-
-DELETE FROM PUBLIC.USERS
-WHERE "id" in (
-	SELECT
-		TRY_CAST("_airbyte_data":"id"::text AS INT) as id
-	FROM Z_AIRBYTE.USERS_RAW
-	WHERE "_airbyte_typed_at" IS NULL -- considering only new/null values, we can recover from failed previous checkpoints
-)
-;
-
-
--- Step 5: Type the Data & handle errors
--- Note: We know the column names from the schema, so we don't need to anything refelxive to look up the column names
--- Don't insert rows which have been deleted by CDC
-
+-- Step 3: Move the new data to the typed table
 INSERT INTO PUBLIC.USERS
 SELECT
 	TRY_CAST("_airbyte_data":"id"::text AS INT) as id,
@@ -270,6 +251,42 @@ WHERE
 	AND "_airbyte_data":"_ab_cdc_deleted_at" IS NULL -- Skip CDC deleted rows (old records are already cleared away above
 ;
 
+-- Step 4: Dedupe and clean the typed table
+-- This is a full table scan, but we need to do it this way to merge the new rows with the old to:
+--   * Consider the case in which there are multiple entries for the same PK in the new insert batch
+--	 * Consider the case in which the data in the new batch is older than the data in the typed table, and we only want to keep the newer (pre-existing) data
+
+DELETE FROM PUBLIC.USERS
+WHERE
+	-- Delete any rows which are not the most recent for a given PK
+	"_airbyte_raw_id" IN (
+		SELECT "_airbyte_raw_id" FROM (
+			SELECT "_airbyte_raw_id", row_number() OVER (
+				PARTITION BY "id" ORDER BY "_airbyte_read_at" DESC
+			) as row_number FROM PUBLIC.USERS
+		)
+		WHERE row_number != 1
+	)
+	OR
+	-- Delete rows that have been CDC deleted
+	id IN (
+		SELECT
+			TRY_CAST("_airbyte_data":"id"::text AS INT) as id -- based on the PK which we know from the connector catalog
+		FROM Z_AIRBYTE.USERS_RAW
+		WHERE "_airbyte_data":"_ab_cdc_deleted_at" IS NOT NULL
+	)
+;
+
+-- Step 5: Remove old entries from Raw table
+DELETE FROM Z_AIRBYTE.USERS_RAW
+WHERE
+	"_airbyte_raw_id" NOT IN (
+		SELECT "_airbyte_raw_id" FROM PUBLIC.USERS
+	)
+	AND
+	"_airbyte_data":"_ab_cdc_deleted_at" IS NULL -- we want to keep the final _ab_cdc_deleted_at=true entry in the raw table for the deleted record
+;
+
 -- Step 6: Apply typed_at timestamp where needed
 UPDATE Z_AIRBYTE.USERS_RAW
 SET "_airbyte_typed_at" = CURRENT_TIMESTAMP()
@@ -277,6 +294,7 @@ WHERE "_airbyte_typed_at" IS NULL
 ;
 
 COMMIT;
+
 ----------------------------
 --------- SYNC 3 -----------
 ----------------------------
@@ -304,6 +322,30 @@ INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_r
 		city: "Menlo Park",
 		zip: "99999"
 } }$$), UUID_STRING(), CURRENT_TIMESTAMP();
+INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_read_at") SELECT PARSE_JSON($${
+	id: 5,
+	first_name: "Cynthia",
+	age: 40,
+	address:{
+		city: "Redwood City",
+		zip: "98765"
+} }$$), UUID_STRING(), CURRENT_TIMESTAMP();
+INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_read_at") SELECT PARSE_JSON($${
+	id: 5,
+	first_name: "Cynthia",
+	age: 41,
+	address:{
+		city: "Redwood City",
+		zip: "98765"
+} }$$), UUID_STRING(), CURRENT_TIMESTAMP();
+INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_read_at") SELECT PARSE_JSON($${
+	id: 5,
+	first_name: "Cynthia",
+	age: 42,
+	address:{
+		city: "Redwood City",
+		zip: "98765"
+} }$$), UUID_STRING(), CURRENT_TIMESTAMP();
 
 -- Step 2: Validate the incoming data
 -- We can't really do this properly in the pure-SQL example here, but we should throw if any row doesn't have a PK
@@ -317,39 +359,7 @@ WHERE
 -- Moving the data and deduping happens in a transaction to prevent duplicates from appearing
 BEGIN;
 
--- Step 3: First, delete any old entries from the raw table which have new records
--- This might be better than using row_number() after inserting the new data into the raw table because the set of PKs to consider will likely be smaller.  The trade is a second round of SAFE_CAST. if that's fast, it might be a good idea
-
-DELETE FROM Z_AIRBYTE.USERS_RAW
-WHERE "_airbyte_raw_id" IN (
-	SELECT "_airbyte_raw_id"
-	FROM PUBLIC.USERS
-	WHERE
-		"id" IN (
-			SELECT TRY_CAST("_airbyte_data":"id"::text AS INT) as id
-			FROM Z_AIRBYTE.USERS_RAW
-			WHERE "_airbyte_typed_at" IS NULL -- considering only new/null values, we can recover from failed previous checkpoints
-		)
-)
-AND "_airbyte_typed_at" IS NOT NULL
-;
-
--- Step 4: Also, delete any old entries from the typed table which have new records
-
-DELETE FROM PUBLIC.USERS
-WHERE "id" in (
-	SELECT
-		TRY_CAST("_airbyte_data":"id"::text AS INT) as id
-	FROM Z_AIRBYTE.USERS_RAW
-	WHERE "_airbyte_typed_at" IS NULL -- considering only new/null values, we can recover from failed previous checkpoints
-)
-;
-
-
--- Step 5: Type the Data & handle errors
--- Note: We know the column names from the schema, so we don't need to anything refelxive to look up the column names
--- Don't insert rows which have been deleted by CDC
-
+-- Step 3: Move the new data to the typed table
 INSERT INTO PUBLIC.USERS
 SELECT
 	TRY_CAST("_airbyte_data":"id"::text AS INT) as id,
@@ -373,6 +383,42 @@ WHERE
 	AND "_airbyte_data":"_ab_cdc_deleted_at" IS NULL -- Skip CDC deleted rows (old records are already cleared away above
 ;
 
+-- Step 4: Dedupe and clean the typed table
+-- This is a full table scan, but we need to do it this way to merge the new rows with the old to:
+--   * Consider the case in which there are multiple entries for the same PK in the new insert batch
+--	 * Consider the case in which the data in the new batch is older than the data in the typed table, and we only want to keep the newer (pre-existing) data
+
+DELETE FROM PUBLIC.USERS
+WHERE
+	-- Delete any rows which are not the most recent for a given PK
+	"_airbyte_raw_id" IN (
+		SELECT "_airbyte_raw_id" FROM (
+			SELECT "_airbyte_raw_id", row_number() OVER (
+				PARTITION BY "id" ORDER BY "_airbyte_read_at" DESC
+			) as row_number FROM PUBLIC.USERS
+		)
+		WHERE row_number != 1
+	)
+	OR
+	-- Delete rows that have been CDC deleted
+	id IN (
+		SELECT
+			TRY_CAST("_airbyte_data":"id"::text AS INT) as id -- based on the PK which we know from the connector catalog
+		FROM Z_AIRBYTE.USERS_RAW
+		WHERE "_airbyte_data":"_ab_cdc_deleted_at" IS NOT NULL
+	)
+;
+
+-- Step 5: Remove old entries from Raw table
+DELETE FROM Z_AIRBYTE.USERS_RAW
+WHERE
+	"_airbyte_raw_id" NOT IN (
+		SELECT "_airbyte_raw_id" FROM PUBLIC.USERS
+	)
+	AND
+	"_airbyte_data":"_ab_cdc_deleted_at" IS NULL -- we want to keep the final _ab_cdc_deleted_at=true entry in the raw table for the deleted record
+;
+
 -- Step 6: Apply typed_at timestamp where needed
 UPDATE Z_AIRBYTE.USERS_RAW
 SET "_airbyte_typed_at" = CURRENT_TIMESTAMP()
@@ -380,3 +426,18 @@ WHERE "_airbyte_typed_at" IS NULL
 ;
 
 COMMIT;
+
+----------------------
+-- FINAL VALIDATION --
+----------------------
+/*
+
+You should see 5 RAW records, one for each of the 5 users
+You should see 4 TYPED records, one for each user, except user #2, which was CDC deleted
+You should have the latest data for each user in the typed final table:
+  * User #1 (Evan) has the latest data (age=39)
+  * User #3 (Edward) has a null age [+ error] due to that age being un-typable
+  * User #4 (Joe) has a null age & no errors
+  * User #5 (Cynthia) has one entry dispite the multiple insertes, with the latest entry (age=42)
+
+*/
