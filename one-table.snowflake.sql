@@ -143,7 +143,7 @@ WHERE
 	)
 	OR
 	-- Delete rows that have been CDC deleted
-	id IN (
+	"id" IN (
 		SELECT
 			TRY_CAST("_airbyte_data":"id"::text AS INT) as id -- based on the PK which we know from the connector catalog
 		FROM Z_AIRBYTE.USERS_RAW
@@ -269,7 +269,7 @@ WHERE
 	)
 	OR
 	-- Delete rows that have been CDC deleted
-	id IN (
+	"id" IN (
 		SELECT
 			TRY_CAST("_airbyte_data":"id"::text AS INT) as id -- based on the PK which we know from the connector catalog
 		FROM Z_AIRBYTE.USERS_RAW
@@ -401,7 +401,7 @@ WHERE
 	)
 	OR
 	-- Delete rows that have been CDC deleted
-	id IN (
+	"id" IN (
 		SELECT
 			TRY_CAST("_airbyte_data":"id"::text AS INT) as id -- based on the PK which we know from the connector catalog
 		FROM Z_AIRBYTE.USERS_RAW
