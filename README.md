@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS Z_AIRBYTE.USERS_RAW (
     "_airbyte_raw_id" VARCHAR(36) NOT NULL PRIMARY KEY, -- Airbyte column, cannot be null
     "_airbyte_data" variant NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_extracted_at" timestamp NOT NULL, -- Airbyte column, cannot be null
-    "_airbyte_typed_at" timestamp -- Airbyte column
+    "_airbyte_loaded_at" timestamp -- Airbyte column
 );
 TRUNCATE TABLE PUBLIC.USERS;
 TRUNCATE TABLE Z_AIRBYTE.USERS_RAW;
@@ -48,7 +48,7 @@ PURGE = FALSE
 -- update the _airbyte_raw_ids each time
 UPDATE Z_AIRBYTE.USERS_RAW
 SET "_airbyte_raw_id" = UUID_STRING()
-WHERE "_airbyte_typed_at" IS NULL
+WHERE "_airbyte_loaded_at" IS NULL
 ;
 ```
 
@@ -67,7 +67,7 @@ PURGE = FALSE
 -- update the _airbyte_raw_ids each time
 UPDATE Z_AIRBYTE.USERS_RAW
 SET "_airbyte_raw_id" = UUID_STRING()
-WHERE "_airbyte_typed_at" IS NULL
+WHERE "_airbyte_loaded_at" IS NULL
 ;
 ```
 

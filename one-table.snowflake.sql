@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS Z_AIRBYTE.USERS_RAW (
     "_airbyte_raw_id" VARCHAR(36) NOT NULL PRIMARY KEY, -- Airbyte column, cannot be null
     "_airbyte_data" variant NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_extracted_at" timestamp NOT NULL, -- Airbyte column, cannot be null
-    "_airbyte_typed_at" timestamp -- Airbyte column
+    "_airbyte_loaded_at" timestamp -- Airbyte column
 );
 
 -- Step 1: Load the raw data
@@ -94,7 +94,7 @@ INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_e
 SELECT COUNT(1)
 FROM Z_AIRBYTE.USERS_RAW
 WHERE
-	"_airbyte_typed_at" IS NULL
+	"_airbyte_loaded_at" IS NULL
 	AND TRY_CAST("_airbyte_data":"id"::text AS INT) IS NULL
 ;
 
@@ -121,7 +121,7 @@ SELECT
 	"_airbyte_extracted_at"
 FROM Z_AIRBYTE.USERS_RAW
 WHERE
-	"_airbyte_typed_at" IS NULL -- inserting only new/null values, we can recover from failed previous checkpoints
+	"_airbyte_loaded_at" IS NULL -- inserting only new/null values, we can recover from failed previous checkpoints
 	AND "_airbyte_data":"_ab_cdc_deleted_at" IS NULL -- Skip CDC deleted rows (old records are already cleared away above
 ;
 
@@ -163,8 +163,8 @@ WHERE
 
 -- Step 6: Apply typed_at timestamp where needed
 UPDATE Z_AIRBYTE.USERS_RAW
-SET "_airbyte_typed_at" = CURRENT_TIMESTAMP()
-WHERE "_airbyte_typed_at" IS NULL
+SET "_airbyte_loaded_at" = CURRENT_TIMESTAMP()
+WHERE "_airbyte_loaded_at" IS NULL
 ;
 
 COMMIT;
@@ -180,7 +180,7 @@ CREATE TABLE IF NOT EXISTS Z_AIRBYTE.USERS_RAW (
     "_airbyte_raw_id" VARCHAR(36) NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_data" variant NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_extracted_at" timestamp NOT NULL, -- Airbyte column, cannot be null
-    "_airbyte_typed_at" timestamp -- Airbyte column
+    "_airbyte_loaded_at" timestamp -- Airbyte column
 );
 
 
@@ -220,7 +220,7 @@ INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_e
 SELECT COUNT(1)
 FROM Z_AIRBYTE.USERS_RAW
 WHERE
-	"_airbyte_typed_at" IS NULL
+	"_airbyte_loaded_at" IS NULL
 	AND TRY_CAST("_airbyte_data":"id"::text AS INT) IS NULL
 ;
 
@@ -247,7 +247,7 @@ SELECT
 	"_airbyte_extracted_at"
 FROM Z_AIRBYTE.USERS_RAW
 WHERE
-	"_airbyte_typed_at" IS NULL -- inserting only new/null values, we can recover from failed previous checkpoints
+	"_airbyte_loaded_at" IS NULL -- inserting only new/null values, we can recover from failed previous checkpoints
 	AND "_airbyte_data":"_ab_cdc_deleted_at" IS NULL -- Skip CDC deleted rows (old records are already cleared away above
 ;
 
@@ -289,8 +289,8 @@ WHERE
 
 -- Step 6: Apply typed_at timestamp where needed
 UPDATE Z_AIRBYTE.USERS_RAW
-SET "_airbyte_typed_at" = CURRENT_TIMESTAMP()
-WHERE "_airbyte_typed_at" IS NULL
+SET "_airbyte_loaded_at" = CURRENT_TIMESTAMP()
+WHERE "_airbyte_loaded_at" IS NULL
 ;
 
 COMMIT;
@@ -306,7 +306,7 @@ CREATE TABLE IF NOT EXISTS Z_AIRBYTE.USERS_RAW (
     "_airbyte_raw_id" VARCHAR(36) NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_data" variant NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_extracted_at" timestamp NOT NULL, -- Airbyte column, cannot be null
-    "_airbyte_typed_at" timestamp -- Airbyte column
+    "_airbyte_loaded_at" timestamp -- Airbyte column
 );
 ;
 
@@ -352,7 +352,7 @@ INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_e
 SELECT COUNT(1)
 FROM Z_AIRBYTE.USERS_RAW
 WHERE
-	"_airbyte_typed_at" IS NULL
+	"_airbyte_loaded_at" IS NULL
 	AND TRY_CAST("_airbyte_data":"id"::text AS INT) IS NULL
 ;
 
@@ -379,7 +379,7 @@ SELECT
 	"_airbyte_extracted_at"
 FROM Z_AIRBYTE.USERS_RAW
 WHERE
-	"_airbyte_typed_at" IS NULL -- inserting only new/null values, we can recover from failed previous checkpoints
+	"_airbyte_loaded_at" IS NULL -- inserting only new/null values, we can recover from failed previous checkpoints
 	AND "_airbyte_data":"_ab_cdc_deleted_at" IS NULL -- Skip CDC deleted rows (old records are already cleared away above
 ;
 
@@ -421,8 +421,8 @@ WHERE
 
 -- Step 6: Apply typed_at timestamp where needed
 UPDATE Z_AIRBYTE.USERS_RAW
-SET "_airbyte_typed_at" = CURRENT_TIMESTAMP()
-WHERE "_airbyte_typed_at" IS NULL
+SET "_airbyte_loaded_at" = CURRENT_TIMESTAMP()
+WHERE "_airbyte_loaded_at" IS NULL
 ;
 
 COMMIT;
