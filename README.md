@@ -78,7 +78,7 @@ COPY z_airbyte.users_raw to '/Users/evan/workspace/airbyte/typing-and-deduping-s
 WITH (FORMAT CSV, HEADER TRUE, ENCODING 'UTF8', quote '|', delimiter E'\t');
 ```
 
-There's also a `gcs://airbyte-performance-testing-public/typing-deduping-testing/users_raw_errors.csv` file that has 1M records with 1% of the rows having a type error. This is useful for testing the error handling.
+There's also a `gcs://airbyte-performance-testing-public/typing-deduping-testing/users_raw_errors.csv` file that has 1M records with 10 rows having a type error. This is useful for testing the error handling.
 
 ### Snowflake Observations
 
