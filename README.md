@@ -1,4 +1,4 @@
-# typing-and-deduping-sql-experiments
+# typing-and-deduping-sql
 
 This repo is a playground for experimenting with different ways of typing and deduping SQL queries on the path to 1-stream 1-table and replacing "normalization" and dbt.
 
