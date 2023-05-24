@@ -122,12 +122,12 @@ CREATE TABLE IF NOT EXISTS z_airbyte.users_raw (
     "_airbyte_raw_id" uuid NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_data" json NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_extracted_at" timestamp NOT NULL, -- Airbyte column, cannot be null
-    "_airbyte_typed_at" timestamp, -- Airbyte column
+    "_airbyte_loaded_at" timestamp, -- Airbyte column
     PRIMARY KEY ("_airbyte_raw_id")
 );
 CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_raw_id" ON z_airbyte.users_raw USING BTREE ("_airbyte_raw_id");
 CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_extracted_at" ON z_airbyte.users_raw USING BTREE ("_airbyte_extracted_at");
-CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_typed_at" ON z_airbyte.users_raw USING BTREE ("_airbyte_typed_at");
+CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_loaded_at" ON z_airbyte.users_raw USING BTREE ("_airbyte_loaded_at");
 
 -- Step 1: Load the raw data
 
@@ -141,7 +141,7 @@ INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_e
 SELECT COUNT(1)
 FROM Z_AIRBYTE.USERS_RAW
 WHERE
-	"_airbyte_typed_at" IS NULL
+	"_airbyte_loaded_at" IS NULL
 	AND _airbyte_safe_cast_to_integer(_airbyte_data ->> 'id') IS NULL
 ;
 
@@ -166,7 +166,7 @@ SELECT
 	_airbyte_extracted_at
 FROM z_airbyte.users_raw
 WHERE
-	_airbyte_typed_at IS NULL -- inserting only new/null values, we can recover from failed previous checkpoints
+	_airbyte_loaded_at IS NULL -- inserting only new/null values, we can recover from failed previous checkpoints
 	AND _airbyte_data ->> '_ab_cdc_deleted_at' IS NULL -- Skip CDC deleted rows (old records are already cleared away above
 ;
 
@@ -210,8 +210,8 @@ WHERE
 
 -- Step 6: Apply typed_at timestamp where needed
 UPDATE z_airbyte.users_raw
-SET _airbyte_typed_at = NOW()
-WHERE _airbyte_typed_at IS NULL
+SET _airbyte_loaded_at = NOW()
+WHERE _airbyte_loaded_at IS NULL
 ;
 
 COMMIT;
@@ -227,12 +227,12 @@ CREATE TABLE IF NOT EXISTS z_airbyte.users_raw (
     "_airbyte_raw_id" uuid NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_data" json NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_extracted_at" timestamp NOT NULL, -- Airbyte column, cannot be null
-    "_airbyte_typed_at" timestamp, -- Airbyte column
+    "_airbyte_loaded_at" timestamp, -- Airbyte column
     PRIMARY KEY ("_airbyte_raw_id")
 );
 CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_raw_id" ON z_airbyte.users_raw USING BTREE ("_airbyte_raw_id");
 CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_extracted_at" ON z_airbyte.users_raw USING BTREE ("_airbyte_extracted_at");
-CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_typed_at" ON z_airbyte.users_raw USING BTREE ("_airbyte_typed_at");
+CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_loaded_at" ON z_airbyte.users_raw USING BTREE ("_airbyte_loaded_at");
 
 -- Step 1: Load the raw data
 -- Age update for Evan (user 1)
@@ -249,7 +249,7 @@ INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_e
 SELECT COUNT(1)
 FROM Z_AIRBYTE.USERS_RAW
 WHERE
-	"_airbyte_typed_at" IS NULL
+	"_airbyte_loaded_at" IS NULL
 	AND _airbyte_safe_cast_to_integer(_airbyte_data ->> 'id') IS NULL
 ;
 
@@ -274,7 +274,7 @@ SELECT
 	_airbyte_extracted_at
 FROM z_airbyte.users_raw
 WHERE
-	_airbyte_typed_at IS NULL -- inserting only new/null values, we can recover from failed previous checkpoints
+	_airbyte_loaded_at IS NULL -- inserting only new/null values, we can recover from failed previous checkpoints
 	AND _airbyte_data ->> '_ab_cdc_deleted_at' IS NULL -- Skip CDC deleted rows (old records are already cleared away above
 ;
 
@@ -318,8 +318,8 @@ WHERE
 
 -- Step 6: Apply typed_at timestamp where needed
 UPDATE z_airbyte.users_raw
-SET _airbyte_typed_at = NOW()
-WHERE _airbyte_typed_at IS NULL
+SET _airbyte_loaded_at = NOW()
+WHERE _airbyte_loaded_at IS NULL
 ;
 
 COMMIT;
@@ -334,12 +334,12 @@ CREATE TABLE IF NOT EXISTS z_airbyte.users_raw (
     "_airbyte_raw_id" uuid NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_data" json NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_extracted_at" timestamp NOT NULL, -- Airbyte column, cannot be null
-    "_airbyte_typed_at" timestamp, -- Airbyte column
+    "_airbyte_loaded_at" timestamp, -- Airbyte column
     PRIMARY KEY ("_airbyte_raw_id")
 );
 CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_raw_id" ON z_airbyte.users_raw USING BTREE ("_airbyte_raw_id");
 CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_extracted_at" ON z_airbyte.users_raw USING BTREE ("_airbyte_extracted_at");
-CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_typed_at" ON z_airbyte.users_raw USING BTREE ("_airbyte_typed_at");
+CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_loaded_at" ON z_airbyte.users_raw USING BTREE ("_airbyte_loaded_at");
 
 -- Step 1: Load the raw data
 -- Delete row 1 with CDC
@@ -356,7 +356,7 @@ INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_e
 SELECT COUNT(1)
 FROM Z_AIRBYTE.USERS_RAW
 WHERE
-	"_airbyte_typed_at" IS NULL
+	"_airbyte_loaded_at" IS NULL
 	AND _airbyte_safe_cast_to_integer(_airbyte_data ->> 'id') IS NULL
 ;
 
@@ -381,7 +381,7 @@ SELECT
 	_airbyte_extracted_at
 FROM z_airbyte.users_raw
 WHERE
-	_airbyte_typed_at IS NULL -- inserting only new/null values, we can recover from failed previous checkpoints
+	_airbyte_loaded_at IS NULL -- inserting only new/null values, we can recover from failed previous checkpoints
 	AND _airbyte_data ->> '_ab_cdc_deleted_at' IS NULL -- Skip CDC deleted rows (old records are already cleared away above
 ;
 
@@ -425,8 +425,8 @@ WHERE
 
 -- Step 6: Apply typed_at timestamp where needed
 UPDATE z_airbyte.users_raw
-SET _airbyte_typed_at = NOW()
-WHERE _airbyte_typed_at IS NULL
+SET _airbyte_loaded_at = NOW()
+WHERE _airbyte_loaded_at IS NULL
 ;
 
 COMMIT;
