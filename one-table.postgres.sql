@@ -36,11 +36,11 @@ CREATE TABLE public.users (
     "address" json,
     "_airbyte_meta" json NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_raw_id" uuid NOT NULL, -- Airbyte column, cannot be null
-    "_airbyte_read_at" timestamp NOT NULL -- Airbyte column, cannot be null
+    "_airbyte_extracted_at" timestamp NOT NULL -- Airbyte column, cannot be null
 );
 
 -- indexes for colums we will use
-CREATE INDEX "idx_users__airbyte_read_at" ON public.users USING BTREE ("_airbyte_read_at");
+CREATE INDEX "idx_users__airbyte_extracted_at" ON public.users USING BTREE ("_airbyte_extracted_at");
 CREATE INDEX "idx_users__airbyte_raw_id" ON public.users USING BTREE ("_airbyte_raw_id");
 CREATE INDEX "idx_users_pk" ON public.users USING BTREE ("id");
 
@@ -121,20 +121,20 @@ CREATE SCHEMA IF NOT EXISTS z_airbyte;
 CREATE TABLE IF NOT EXISTS z_airbyte.users_raw (
     "_airbyte_raw_id" uuid NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_data" json NOT NULL, -- Airbyte column, cannot be null
-    "_airbyte_read_at" timestamp NOT NULL, -- Airbyte column, cannot be null
+    "_airbyte_extracted_at" timestamp NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_typed_at" timestamp, -- Airbyte column
     PRIMARY KEY ("_airbyte_raw_id")
 );
 CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_raw_id" ON z_airbyte.users_raw USING BTREE ("_airbyte_raw_id");
-CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_read_at" ON z_airbyte.users_raw USING BTREE ("_airbyte_read_at");
+CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_extracted_at" ON z_airbyte.users_raw USING BTREE ("_airbyte_extracted_at");
 CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_typed_at" ON z_airbyte.users_raw USING BTREE ("_airbyte_typed_at");
 
 -- Step 1: Load the raw data
 
-INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_read_at") VALUES ('{   "id": 1,   "first_name": "Evan",   "age": 38,   "address": {     "city": "San Francisco",     "zip": "94001"   } }', gen_random_uuid(), NOW());
-INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_read_at") VALUES ('{   "id": 2,   "first_name": "Brian",   "age": 39,   "address": {     "city": "Menlo Park",     "zip": "94002"   } }', gen_random_uuid(), NOW());
-INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_read_at") VALUES ('{   "id": 3,   "first_name": "Edward",   "age": 40,   "address": {     "city": "Sunyvale",     "zip": "94003"   } }', gen_random_uuid(), NOW());
-INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_read_at") VALUES ('{   "id": 4,   "first_name": "Joe",   "address": {     "city": "Seattle",     "zip": "98999"   } }', gen_random_uuid(), NOW()); -- Joe is missing an age, null OK
+INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES ('{   "id": 1,   "first_name": "Evan",   "age": 38,   "address": {     "city": "San Francisco",     "zip": "94001"   } }', gen_random_uuid(), NOW());
+INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES ('{   "id": 2,   "first_name": "Brian",   "age": 39,   "address": {     "city": "Menlo Park",     "zip": "94002"   } }', gen_random_uuid(), NOW());
+INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES ('{   "id": 3,   "first_name": "Edward",   "age": 40,   "address": {     "city": "Sunyvale",     "zip": "94003"   } }', gen_random_uuid(), NOW());
+INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES ('{   "id": 4,   "first_name": "Joe",   "address": {     "city": "Seattle",     "zip": "98999"   } }', gen_random_uuid(), NOW()); -- Joe is missing an age, null OK
 
 -- Step 2: Validate the incoming data
 -- We can't really do this properly in the pure-SQL example here, but we should throw if any row doesn't have a PK
@@ -163,7 +163,7 @@ SELECT
 		ELSE '{}'
 	END::JSON as _airbyte_meta,
 	_airbyte_raw_id,
-	_airbyte_read_at
+	_airbyte_extracted_at
 FROM z_airbyte.users_raw
 WHERE
 	_airbyte_typed_at IS NULL -- inserting only new/null values, we can recover from failed previous checkpoints
@@ -177,7 +177,7 @@ WHERE
 
 WITH cte AS (
 	SELECT _airbyte_raw_id, row_number() OVER (
-		PARTITION BY id ORDER BY _airbyte_read_at DESC
+		PARTITION BY id ORDER BY _airbyte_extracted_at DESC
 	) as row_number FROM public.users
 )
 
@@ -226,12 +226,12 @@ CREATE SCHEMA IF NOT EXISTS z_airbyte;
 CREATE TABLE IF NOT EXISTS z_airbyte.users_raw (
     "_airbyte_raw_id" uuid NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_data" json NOT NULL, -- Airbyte column, cannot be null
-    "_airbyte_read_at" timestamp NOT NULL, -- Airbyte column, cannot be null
+    "_airbyte_extracted_at" timestamp NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_typed_at" timestamp, -- Airbyte column
     PRIMARY KEY ("_airbyte_raw_id")
 );
 CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_raw_id" ON z_airbyte.users_raw USING BTREE ("_airbyte_raw_id");
-CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_read_at" ON z_airbyte.users_raw USING BTREE ("_airbyte_read_at");
+CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_extracted_at" ON z_airbyte.users_raw USING BTREE ("_airbyte_extracted_at");
 CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_typed_at" ON z_airbyte.users_raw USING BTREE ("_airbyte_typed_at");
 
 -- Step 1: Load the raw data
@@ -240,9 +240,9 @@ CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_typed_at" ON z_airbyte.users_
 -- There is an update for Edward (user 3, age is invalid)
 -- No update for Joe (user 4)
 
-INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_read_at") VALUES ('{   "id": 1,   "first_name": "Evan",   "age": 39,   "address": {     "city": "San Francisco",     "zip": "94001"   } }', gen_random_uuid(), NOW());
-INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_read_at") VALUES ('{   "id": 2,   "first_name": "Brian",   "age": 39,   "address": {     "city": "Menlo Park",     "zip": "99999"   } }', gen_random_uuid(), NOW());
-INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_read_at") VALUES ('{   "id": 3,   "first_name": "Edward",   "age": "forty",   "address": {     "city": "Sunyvale",     "zip": "94003"   } }', gen_random_uuid(), NOW());
+INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES ('{   "id": 1,   "first_name": "Evan",   "age": 39,   "address": {     "city": "San Francisco",     "zip": "94001"   } }', gen_random_uuid(), NOW());
+INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES ('{   "id": 2,   "first_name": "Brian",   "age": 39,   "address": {     "city": "Menlo Park",     "zip": "99999"   } }', gen_random_uuid(), NOW());
+INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES ('{   "id": 3,   "first_name": "Edward",   "age": "forty",   "address": {     "city": "Sunyvale",     "zip": "94003"   } }', gen_random_uuid(), NOW());
 
 -- Step 2: Validate the incoming data
 -- We can't really do this properly in the pure-SQL example here, but we should throw if any row doesn't have a PK
@@ -271,7 +271,7 @@ SELECT
 		ELSE '{}'
 	END::JSON as _airbyte_meta,
 	_airbyte_raw_id,
-	_airbyte_read_at
+	_airbyte_extracted_at
 FROM z_airbyte.users_raw
 WHERE
 	_airbyte_typed_at IS NULL -- inserting only new/null values, we can recover from failed previous checkpoints
@@ -285,7 +285,7 @@ WHERE
 
 WITH cte AS (
 	SELECT _airbyte_raw_id, row_number() OVER (
-		PARTITION BY id ORDER BY _airbyte_read_at DESC
+		PARTITION BY id ORDER BY _airbyte_extracted_at DESC
 	) as row_number FROM public.users
 )
 
@@ -333,22 +333,22 @@ CREATE SCHEMA IF NOT EXISTS z_airbyte;
 CREATE TABLE IF NOT EXISTS z_airbyte.users_raw (
     "_airbyte_raw_id" uuid NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_data" json NOT NULL, -- Airbyte column, cannot be null
-    "_airbyte_read_at" timestamp NOT NULL, -- Airbyte column, cannot be null
+    "_airbyte_extracted_at" timestamp NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_typed_at" timestamp, -- Airbyte column
     PRIMARY KEY ("_airbyte_raw_id")
 );
 CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_raw_id" ON z_airbyte.users_raw USING BTREE ("_airbyte_raw_id");
-CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_read_at" ON z_airbyte.users_raw USING BTREE ("_airbyte_read_at");
+CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_extracted_at" ON z_airbyte.users_raw USING BTREE ("_airbyte_extracted_at");
 CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_typed_at" ON z_airbyte.users_raw USING BTREE ("_airbyte_typed_at");
 
 -- Step 1: Load the raw data
 -- Delete row 1 with CDC
 -- Insert multiple records for a new user (with age incrementing each time)
 
-INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_read_at") VALUES ('{   "id": 2,   "first_name": "Brian",   "age": 39,   "address": {     "city": "Menlo Park",     "zip": "99999"   }, "_ab_cdc_deleted_at": true}', gen_random_uuid(), NOW());
-INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_read_at") VALUES ('{   "id": 5,   "first_name": "Cynthia",   "age": 40,   "address": {     "city": "Redwood City",     "zip": "98765"   }}', gen_random_uuid(), NOW());
-INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_read_at") VALUES ('{   "id": 5,   "first_name": "Cynthia",   "age": 41,   "address": {     "city": "Redwood City",     "zip": "98765"   }}', gen_random_uuid(), NOW());
-INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_read_at") VALUES ('{   "id": 5,   "first_name": "Cynthia",   "age": 42,   "address": {     "city": "Redwood City",     "zip": "98765"   }}', gen_random_uuid(), NOW());
+INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES ('{   "id": 2,   "first_name": "Brian",   "age": 39,   "address": {     "city": "Menlo Park",     "zip": "99999"   }, "_ab_cdc_deleted_at": true}', gen_random_uuid(), NOW());
+INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES ('{   "id": 5,   "first_name": "Cynthia",   "age": 40,   "address": {     "city": "Redwood City",     "zip": "98765"   }}', gen_random_uuid(), NOW());
+INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES ('{   "id": 5,   "first_name": "Cynthia",   "age": 41,   "address": {     "city": "Redwood City",     "zip": "98765"   }}', gen_random_uuid(), NOW());
+INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES ('{   "id": 5,   "first_name": "Cynthia",   "age": 42,   "address": {     "city": "Redwood City",     "zip": "98765"   }}', gen_random_uuid(), NOW());
 
 
 -- Step 2: Validate the incoming data
@@ -378,7 +378,7 @@ SELECT
 		ELSE '{}'
 	END::JSON as _airbyte_meta,
 	_airbyte_raw_id,
-	_airbyte_read_at
+	_airbyte_extracted_at
 FROM z_airbyte.users_raw
 WHERE
 	_airbyte_typed_at IS NULL -- inserting only new/null values, we can recover from failed previous checkpoints
@@ -392,7 +392,7 @@ WHERE
 
 WITH cte AS (
 	SELECT _airbyte_raw_id, row_number() OVER (
-		PARTITION BY id ORDER BY _airbyte_read_at DESC
+		PARTITION BY id ORDER BY _airbyte_extracted_at DESC
 	) as row_number FROM public.users
 )
 

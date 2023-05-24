@@ -36,7 +36,7 @@ CREATE TABLE PUBLIC.USERS (
     "address" variant,
     "_airbyte_meta" variant NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_raw_id" VARCHAR(36) NOT NULL, -- Airbyte column, cannot be null
-    "_airbyte_read_at" timestamp NOT NULL -- Airbyte column, cannot be null
+    "_airbyte_extracted_at" timestamp NOT NULL -- Airbyte column, cannot be null
 );
 
 ----------------------------
@@ -49,13 +49,13 @@ CREATE SCHEMA IF NOT EXISTS Z_AIRBYTE;
 CREATE TABLE IF NOT EXISTS Z_AIRBYTE.USERS_RAW (
     "_airbyte_raw_id" VARCHAR(36) NOT NULL PRIMARY KEY, -- Airbyte column, cannot be null
     "_airbyte_data" variant NOT NULL, -- Airbyte column, cannot be null
-    "_airbyte_read_at" timestamp NOT NULL, -- Airbyte column, cannot be null
+    "_airbyte_extracted_at" timestamp NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_typed_at" timestamp -- Airbyte column
 );
 
 -- Step 1: Load the raw data
 
-INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_read_at") SELECT PARSE_JSON($${
+INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") SELECT PARSE_JSON($${
 	id: 1,
 	first_name: "Evan",
 	age: 38,
@@ -63,7 +63,7 @@ INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_r
 		city: "San Francisco",
 		zip: "94001"
 } }$$), UUID_STRING(), CURRENT_TIMESTAMP();
-INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_read_at") SELECT PARSE_JSON($${
+INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") SELECT PARSE_JSON($${
 	id: 2,
 	first_name: "Brian",
 	age: 39,
@@ -71,7 +71,7 @@ INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_r
 		city: "Menlo Park",
 		zip: "94002"
 } }$$), UUID_STRING(), CURRENT_TIMESTAMP();
-INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_read_at") SELECT PARSE_JSON($${
+INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") SELECT PARSE_JSON($${
 	id: 3,
 	first_name: "Edward",
 	age: 40,
@@ -80,7 +80,7 @@ INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_r
 		zip: "94003"
 } }$$), UUID_STRING(), CURRENT_TIMESTAMP();
 -- Joe is missing an age, null OK
-INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_read_at") SELECT PARSE_JSON($${
+INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") SELECT PARSE_JSON($${
 	id: 4,
 	first_name: "Joe",
 	age: 40,
@@ -118,7 +118,7 @@ SELECT
 		END
 	) as _airbyte_meta,
 	"_airbyte_raw_id",
-	"_airbyte_read_at"
+	"_airbyte_extracted_at"
 FROM Z_AIRBYTE.USERS_RAW
 WHERE
 	"_airbyte_typed_at" IS NULL -- inserting only new/null values, we can recover from failed previous checkpoints
@@ -136,7 +136,7 @@ WHERE
 	"_airbyte_raw_id" IN (
 		SELECT "_airbyte_raw_id" FROM (
 			SELECT "_airbyte_raw_id", row_number() OVER (
-				PARTITION BY "id" ORDER BY "_airbyte_read_at" DESC
+				PARTITION BY "id" ORDER BY "_airbyte_extracted_at" DESC
 			) as row_number FROM PUBLIC.USERS
 		)
 		WHERE row_number != 1
@@ -179,7 +179,7 @@ CREATE SCHEMA IF NOT EXISTS Z_AIRBYTE;
 CREATE TABLE IF NOT EXISTS Z_AIRBYTE.USERS_RAW (
     "_airbyte_raw_id" VARCHAR(36) NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_data" variant NOT NULL, -- Airbyte column, cannot be null
-    "_airbyte_read_at" timestamp NOT NULL, -- Airbyte column, cannot be null
+    "_airbyte_extracted_at" timestamp NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_typed_at" timestamp -- Airbyte column
 );
 
@@ -190,7 +190,7 @@ CREATE TABLE IF NOT EXISTS Z_AIRBYTE.USERS_RAW (
 -- There is an update for Edward (user 3, age is invalid)
 -- No update for Joe (user 4)
 
-INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_read_at") SELECT PARSE_JSON($${
+INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") SELECT PARSE_JSON($${
 	id: 1,
 	first_name: "Evan",
 	age: 39,
@@ -198,7 +198,7 @@ INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_r
 		city: "San Francisco",
 		zip: "94001"
 } }$$), UUID_STRING(), CURRENT_TIMESTAMP();
-INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_read_at") SELECT PARSE_JSON($${
+INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") SELECT PARSE_JSON($${
 	id: 2,
 	first_name: "Brian",
 	age: 39,
@@ -206,7 +206,7 @@ INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_r
 		city: "Menlo Park",
 		zip: "99999"
 } }$$), UUID_STRING(), CURRENT_TIMESTAMP();
-INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_read_at") SELECT PARSE_JSON($${
+INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") SELECT PARSE_JSON($${
 	id: 3,
 	first_name: "Edward",
 	age: "forty",
@@ -244,7 +244,7 @@ SELECT
 		END
 	) as _airbyte_meta,
 	"_airbyte_raw_id",
-	"_airbyte_read_at"
+	"_airbyte_extracted_at"
 FROM Z_AIRBYTE.USERS_RAW
 WHERE
 	"_airbyte_typed_at" IS NULL -- inserting only new/null values, we can recover from failed previous checkpoints
@@ -262,7 +262,7 @@ WHERE
 	"_airbyte_raw_id" IN (
 		SELECT "_airbyte_raw_id" FROM (
 			SELECT "_airbyte_raw_id", row_number() OVER (
-				PARTITION BY "id" ORDER BY "_airbyte_read_at" DESC
+				PARTITION BY "id" ORDER BY "_airbyte_extracted_at" DESC
 			) as row_number FROM PUBLIC.USERS
 		)
 		WHERE row_number != 1
@@ -305,7 +305,7 @@ CREATE SCHEMA IF NOT EXISTS Z_AIRBYTE;
 CREATE TABLE IF NOT EXISTS Z_AIRBYTE.USERS_RAW (
     "_airbyte_raw_id" VARCHAR(36) NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_data" variant NOT NULL, -- Airbyte column, cannot be null
-    "_airbyte_read_at" timestamp NOT NULL, -- Airbyte column, cannot be null
+    "_airbyte_extracted_at" timestamp NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_typed_at" timestamp -- Airbyte column
 );
 ;
@@ -313,7 +313,7 @@ CREATE TABLE IF NOT EXISTS Z_AIRBYTE.USERS_RAW (
 -- Step 1: Load the raw data
 -- Delete row 1 with CDC
 
-INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_read_at") SELECT PARSE_JSON($${
+INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") SELECT PARSE_JSON($${
 	_ab_cdc_deleted_at: true,
 	id: 2,
 	first_name: "Brian",
@@ -322,7 +322,7 @@ INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_r
 		city: "Menlo Park",
 		zip: "99999"
 } }$$), UUID_STRING(), CURRENT_TIMESTAMP();
-INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_read_at") SELECT PARSE_JSON($${
+INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") SELECT PARSE_JSON($${
 	id: 5,
 	first_name: "Cynthia",
 	age: 40,
@@ -330,7 +330,7 @@ INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_r
 		city: "Redwood City",
 		zip: "98765"
 } }$$), UUID_STRING(), CURRENT_TIMESTAMP();
-INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_read_at") SELECT PARSE_JSON($${
+INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") SELECT PARSE_JSON($${
 	id: 5,
 	first_name: "Cynthia",
 	age: 41,
@@ -338,7 +338,7 @@ INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_r
 		city: "Redwood City",
 		zip: "98765"
 } }$$), UUID_STRING(), CURRENT_TIMESTAMP();
-INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_read_at") SELECT PARSE_JSON($${
+INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") SELECT PARSE_JSON($${
 	id: 5,
 	first_name: "Cynthia",
 	age: 42,
@@ -376,7 +376,7 @@ SELECT
 		END
 	) as _airbyte_meta,
 	"_airbyte_raw_id",
-	"_airbyte_read_at"
+	"_airbyte_extracted_at"
 FROM Z_AIRBYTE.USERS_RAW
 WHERE
 	"_airbyte_typed_at" IS NULL -- inserting only new/null values, we can recover from failed previous checkpoints
@@ -394,7 +394,7 @@ WHERE
 	"_airbyte_raw_id" IN (
 		SELECT "_airbyte_raw_id" FROM (
 			SELECT "_airbyte_raw_id", row_number() OVER (
-				PARTITION BY "id" ORDER BY "_airbyte_read_at" DESC
+				PARTITION BY "id" ORDER BY "_airbyte_extracted_at" DESC
 			) as row_number FROM PUBLIC.USERS
 		)
 		WHERE row_number != 1

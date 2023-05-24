@@ -26,13 +26,13 @@ CREATE TABLE PUBLIC.USERS (
     "address" variant,
     "_airbyte_meta" variant NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_raw_id" VARCHAR(36) NOT NULL, -- Airbyte column, cannot be null
-    "_airbyte_read_at" timestamp NOT NULL -- Airbyte column, cannot be null
+    "_airbyte_extracted_at" timestamp NOT NULL -- Airbyte column, cannot be null
 );
 CREATE SCHEMA IF NOT EXISTS Z_AIRBYTE;
 CREATE TABLE IF NOT EXISTS Z_AIRBYTE.USERS_RAW (
     "_airbyte_raw_id" VARCHAR(36) NOT NULL PRIMARY KEY, -- Airbyte column, cannot be null
     "_airbyte_data" variant NOT NULL, -- Airbyte column, cannot be null
-    "_airbyte_read_at" timestamp NOT NULL, -- Airbyte column, cannot be null
+    "_airbyte_extracted_at" timestamp NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_typed_at" timestamp -- Airbyte column
 );
 TRUNCATE TABLE PUBLIC.USERS;
