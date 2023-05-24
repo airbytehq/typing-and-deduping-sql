@@ -4,19 +4,38 @@ This repo is a playground for experimenting with different ways of typing and de
 
 Read more about this in the [PRD](https://docs.google.com/document/d/126SLzFLMS2QYXHAItx1cn03aj0HMuuDlajlUAVFtSIM/edit).
 
+## Normalization Jobs Checklist
+
+- [ ] Accepts batches of new data and types them safely while inserting the data into the final table
+- [ ] Handles deduplication
+- [ ] Handles per-row typing errors safely
+- [ ] Handles composite primary keys
+- [ ] Handles deduplication when multiple entries for a PK exist in the same batch
+- [ ] Handles deduplication when multiple entries for a PK when inserted out-of-order across different batches
+
 ## Snowflake Testing Notes.
 
 If you want to seed a big test database:
 
 ```sql
--- Create the table
+-- Create the tables
+CREATE TABLE PUBLIC.USERS (
+    "id" int PRIMARY KEY, -- PK cannot be null, but after raw insert and before typing, row will be null
+    "first_name" text,
+    "age" int,
+    "address" variant,
+    "_airbyte_meta" variant NOT NULL, -- Airbyte column, cannot be null
+    "_airbyte_raw_id" VARCHAR(36) NOT NULL, -- Airbyte column, cannot be null
+    "_airbyte_extracted_at" timestamp NOT NULL -- Airbyte column, cannot be null
+);
 CREATE SCHEMA IF NOT EXISTS Z_AIRBYTE;
 CREATE TABLE IF NOT EXISTS Z_AIRBYTE.USERS_RAW (
-    "_airbyte_raw_id" VARCHAR(36) NOT NULL, -- Airbyte column, cannot be null
+    "_airbyte_raw_id" VARCHAR(36) NOT NULL PRIMARY KEY, -- Airbyte column, cannot be null
     "_airbyte_data" variant NOT NULL, -- Airbyte column, cannot be null
-    "_airbyte_read_at" timestamp NOT NULL, -- Airbyte column, cannot be null
+    "_airbyte_extracted_at" timestamp NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_typed_at" timestamp -- Airbyte column
 );
+TRUNCATE TABLE PUBLIC.USERS;
 TRUNCATE TABLE Z_AIRBYTE.USERS_RAW;
 
 -- Load in the data (CSV)
@@ -25,6 +44,11 @@ FROM 'gcs://airbyte-performance-testing-public/typing-deduping-testing/users_raw
 FILE_FORMAT = (TYPE = 'CSV' FIELD_DELIMITER = '\t' SKIP_HEADER = 1 ERROR_ON_COLUMN_COUNT_MISMATCH = FALSE)
 FORCE = TRUE
 PURGE = FALSE
+;
+-- update the _airbyte_raw_ids each time
+UPDATE Z_AIRBYTE.USERS_RAW
+SET "_airbyte_raw_id" = UUID_STRING()
+WHERE "_airbyte_typed_at" IS NULL
 ;
 ```
 
@@ -40,6 +64,11 @@ FILE_FORMAT = (TYPE = 'CSV' FIELD_DELIMITER = '\t' SKIP_HEADER = 1 ERROR_ON_COLU
 FORCE = TRUE
 PURGE = FALSE
 ;
+-- update the _airbyte_raw_ids each time
+UPDATE Z_AIRBYTE.USERS_RAW
+SET "_airbyte_raw_id" = UUID_STRING()
+WHERE "_airbyte_typed_at" IS NULL
+;
 ```
 
 To Dump the file from postgres (where it was generated locally):
@@ -48,6 +77,8 @@ To Dump the file from postgres (where it was generated locally):
 COPY z_airbyte.users_raw to '/Users/evan/workspace/airbyte/typing-and-deduping-sql-experiments/data/users_raw.csv'
 WITH (FORMAT CSV, HEADER TRUE, ENCODING 'UTF8', quote '|', delimiter E'\t');
 ```
+
+There's also a `gcs://airbyte-performance-testing-public/typing-deduping-testing/users_raw_errors.csv` file that has 1M records with 1% of the rows having a type error. This is useful for testing the error handling.
 
 ### Snowflake Observations
 
