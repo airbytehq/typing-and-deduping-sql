@@ -10,17 +10,14 @@ Schema:
   "address": [null, {
     "street": "string",
     "zip": "string"
-  }]
+  }],
+	"updated_at": timestamp
 }
-*/
-
-/*
 
 KNOWN LIMITATIONS
 * Only one error type shown per row, the first one sequentially
 * There's a full table scan used for de-duplication.  This can be made more efficient...
 * It would be better to show the actual error message from the DB, not custom "this column is bad" strings
-
 */
 
 -- Set up the Experiment
@@ -34,6 +31,7 @@ CREATE TABLE PUBLIC.USERS (
     "first_name" text,
     "age" int,
     "address" variant,
+		"updated_at" timestamp NOT NULL,
     "_airbyte_meta" variant NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_raw_id" VARCHAR(36) NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_extracted_at" timestamp NOT NULL -- Airbyte column, cannot be null
@@ -59,6 +57,7 @@ INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_e
 	id: 1,
 	first_name: "Evan",
 	age: 38,
+	updated_at: "2020-01-01T00:00:00Z"
 	address:{
 		city: "San Francisco",
 		zip: "94001"
@@ -67,6 +66,7 @@ INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_e
 	id: 2,
 	first_name: "Brian",
 	age: 39,
+	updated_at: "2020-01-01T00:00:01Z"
 	address:{
 		city: "Menlo Park",
 		zip: "94002"
@@ -75,6 +75,7 @@ INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_e
 	id: 3,
 	first_name: "Edward",
 	age: 40,
+	updated_at: "2020-01-01T00:00:02Z"
 	address:{
 		city: "Sunyvale",
 		zip: "94003"
@@ -84,6 +85,7 @@ INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_e
 	id: 4,
 	first_name: "Joe",
 	age: 40,
+	updated_at: "2020-01-01T00:00:03Z"
 	address:{
 		city: "Seattle",
 		zip: "98999"
@@ -108,12 +110,14 @@ SELECT
 	TRY_CAST("_airbyte_data":"first_name"::text AS TEXT) as first_name,
 	TRY_CAST("_airbyte_data":"age"::text AS INT) as age,
 	"_airbyte_data":"address" as address, -- TRY_CAST does not work with JSON/VARIANT
+	TRY_CAST("_airbyte_data":"updated_at"::text AS TIMESTAMP) as updated_at,
 	(
 		CASE
 			WHEN "_airbyte_data":"id" IS NOT NULL AND TRY_CAST("_airbyte_data":"id"::text AS INT) IS NULL THEN PARSE_JSON($${error: "Problem with `id`"}$$)
 			WHEN "_airbyte_data":"first_name" IS NOT NULL AND TRY_CAST("_airbyte_data":"first_name"::text AS TEXT) IS NULL THEN PARSE_JSON($${error: "Problem with `first_name`"}$$)
 			WHEN "_airbyte_data":"age" IS NOT NULL AND TRY_CAST("_airbyte_data":"age"::text AS INT) IS NULL THEN PARSE_JSON($${error: "Problem with `age`"}$$)
 			-- no TRY_CAST for JSON
+			WHEN "_airbyte_data":"updated_at" IS NOT NULL AND TRY_CAST("_airbyte_data":"updated_at"::text AS TIMESTAMP) IS NULL THEN PARSE_JSON($${error: "Problem with `updated_at`"}$$)
 			ELSE PARSE_JSON($${}$$)
 		END
 	) as _airbyte_meta,
@@ -136,7 +140,7 @@ WHERE
 	"_airbyte_raw_id" IN (
 		SELECT "_airbyte_raw_id" FROM (
 			SELECT "_airbyte_raw_id", row_number() OVER (
-				PARTITION BY "id" ORDER BY "_airbyte_extracted_at" DESC
+				PARTITION BY "id" ORDER BY "updated_at" DESC, "_airbyte_extracted_at" DESC
 			) as row_number FROM PUBLIC.USERS
 		)
 		WHERE row_number != 1
@@ -194,6 +198,7 @@ INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_e
 	id: 1,
 	first_name: "Evan",
 	age: 39,
+	updated_at: "2020-01-02T00:00:00Z"
 	address:{
 		city: "San Francisco",
 		zip: "94001"
@@ -202,6 +207,7 @@ INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_e
 	id: 2,
 	first_name: "Brian",
 	age: 39,
+	updated_at: "2020-01-02T00:00:01Z"
 	address:{
 		city: "Menlo Park",
 		zip: "99999"
@@ -210,6 +216,7 @@ INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_e
 	id: 3,
 	first_name: "Edward",
 	age: "forty",
+	updated_at: "2020-01-02T00:00:02Z"
 	address:{
 		city: "Sunyvale",
 		zip: "94003"
@@ -234,12 +241,14 @@ SELECT
 	TRY_CAST("_airbyte_data":"first_name"::text AS TEXT) as first_name,
 	TRY_CAST("_airbyte_data":"age"::text AS INT) as age,
 	"_airbyte_data":"address" as address, -- TRY_CAST does not work with JSON/VARIANT
+	TRY_CAST("_airbyte_data":"updated_at"::text AS TIMESTAMP) as updated_at,
 	(
 		CASE
 			WHEN "_airbyte_data":"id" IS NOT NULL AND TRY_CAST("_airbyte_data":"id"::text AS INT) IS NULL THEN PARSE_JSON($${error: "Problem with `id`"}$$)
 			WHEN "_airbyte_data":"first_name" IS NOT NULL AND TRY_CAST("_airbyte_data":"first_name"::text AS TEXT) IS NULL THEN PARSE_JSON($${error: "Problem with `first_name`"}$$)
 			WHEN "_airbyte_data":"age" IS NOT NULL AND TRY_CAST("_airbyte_data":"age"::text AS INT) IS NULL THEN PARSE_JSON($${error: "Problem with `age`"}$$)
 			-- no TRY_CAST for JSON
+			WHEN "_airbyte_data":"updated_at" IS NOT NULL AND TRY_CAST("_airbyte_data":"updated_at"::text AS TIMESTAMP) IS NULL THEN PARSE_JSON($${error: "Problem with `updated_at`"}$$)
 			ELSE PARSE_JSON($${}$$)
 		END
 	) as _airbyte_meta,
@@ -262,7 +271,7 @@ WHERE
 	"_airbyte_raw_id" IN (
 		SELECT "_airbyte_raw_id" FROM (
 			SELECT "_airbyte_raw_id", row_number() OVER (
-				PARTITION BY "id" ORDER BY "_airbyte_extracted_at" DESC
+				PARTITION BY "id" ORDER BY "updated_at" DESC, "_airbyte_extracted_at" DESC
 			) as row_number FROM PUBLIC.USERS
 		)
 		WHERE row_number != 1
@@ -318,6 +327,7 @@ INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_e
 	id: 2,
 	first_name: "Brian",
 	age: 39,
+	updated_at: "2020-01-03T00:00:00Z"
 	address:{
 		city: "Menlo Park",
 		zip: "99999"
@@ -326,6 +336,7 @@ INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_e
 	id: 5,
 	first_name: "Cynthia",
 	age: 40,
+	updated_at: "2020-01-03T00:00:01Z"
 	address:{
 		city: "Redwood City",
 		zip: "98765"
@@ -334,6 +345,7 @@ INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_e
 	id: 5,
 	first_name: "Cynthia",
 	age: 41,
+	updated_at: "2020-01-03T00:00:02Z"
 	address:{
 		city: "Redwood City",
 		zip: "98765"
@@ -342,6 +354,7 @@ INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_e
 	id: 5,
 	first_name: "Cynthia",
 	age: 42,
+	updated_at: "2020-01-03T00:00:03Z"
 	address:{
 		city: "Redwood City",
 		zip: "98765"
@@ -366,12 +379,14 @@ SELECT
 	TRY_CAST("_airbyte_data":"first_name"::text AS TEXT) as first_name,
 	TRY_CAST("_airbyte_data":"age"::text AS INT) as age,
 	"_airbyte_data":"address" as address, -- TRY_CAST does not work with JSON/VARIANT
+	TRY_CAST("_airbyte_data":"updated_at"::text AS TIMESTAMP) as updated_at,
 	(
 		CASE
 			WHEN "_airbyte_data":"id" IS NOT NULL AND TRY_CAST("_airbyte_data":"id"::text AS INT) IS NULL THEN PARSE_JSON($${error: "Problem with `id`"}$$)
 			WHEN "_airbyte_data":"first_name" IS NOT NULL AND TRY_CAST("_airbyte_data":"first_name"::text AS TEXT) IS NULL THEN PARSE_JSON($${error: "Problem with `first_name`"}$$)
 			WHEN "_airbyte_data":"age" IS NOT NULL AND TRY_CAST("_airbyte_data":"age"::text AS INT) IS NULL THEN PARSE_JSON($${error: "Problem with `age`"}$$)
 			-- no TRY_CAST for JSON
+			WHEN "_airbyte_data":"updated_at" IS NOT NULL AND TRY_CAST("_airbyte_data":"updated_at"::text AS TIMESTAMP) IS NULL THEN PARSE_JSON($${error: "Problem with `updated_at`"}$$)
 			ELSE PARSE_JSON($${}$$)
 		END
 	) as _airbyte_meta,
@@ -394,7 +409,7 @@ WHERE
 	"_airbyte_raw_id" IN (
 		SELECT "_airbyte_raw_id" FROM (
 			SELECT "_airbyte_raw_id", row_number() OVER (
-				PARTITION BY "id" ORDER BY "_airbyte_extracted_at" DESC
+				PARTITION BY "id" ORDER BY "updated_at" DESC, "_airbyte_extracted_at" DESC
 			) as row_number FROM PUBLIC.USERS
 		)
 		WHERE row_number != 1

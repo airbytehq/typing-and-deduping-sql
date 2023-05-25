@@ -10,17 +10,14 @@ Schema:
   "address": [null, {
     "street": "string",
     "zip": "string"
-  }]
+  }],
+	"updated_at": timestamp
 }
-*/
-
-/*
 
 KNOWN LIMITATIONS
 * Only one error type shown per row, the first one sequentially
 * There's a full table scan used for de-duplication.  This can be made more efficient...
 * It would be better to show the actual error message from the DB, not custom "this column is bad" strings
-
 */
 
 -- Set up the Experiment
@@ -34,6 +31,7 @@ CREATE TABLE public.users (
     "first_name" text,
     "age" int8,
     "address" json,
+    "updated_at" timestamp NOT NULL,
     "_airbyte_meta" json NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_raw_id" uuid NOT NULL, -- Airbyte column, cannot be null
     "_airbyte_extracted_at" timestamp NOT NULL -- Airbyte column, cannot be null
@@ -43,6 +41,7 @@ CREATE TABLE public.users (
 CREATE INDEX "idx_users__airbyte_extracted_at" ON public.users USING BTREE ("_airbyte_extracted_at");
 CREATE INDEX "idx_users__airbyte_raw_id" ON public.users USING BTREE ("_airbyte_raw_id");
 CREATE INDEX "idx_users_pk" ON public.users USING BTREE ("id");
+CREATE INDEX "idx_updated_at_pk" ON public.users USING BTREE ("updated_at");
 
 -- SET UP "safe cast" methods
 -- Some DBs (BQ) have this built in, but we can do more-or-less the same thing with custom functions
@@ -95,6 +94,22 @@ RETURN v_text_value;
 END;
 $$ LANGUAGE plpgsql;
 
+DROP FUNCTION IF EXISTS "public"._airbyte_safe_cast_to_timestamp(v_input text);
+
+CREATE OR REPLACE FUNCTION _airbyte_safe_cast_to_timestamp(v_input text)
+RETURNS TIMESTAMP AS $$
+DECLARE v_ts_value TIMESTAMP DEFAULT NULL;
+BEGIN
+    BEGIN
+        v_ts_value := v_input::TIMESTAMP;
+    EXCEPTION WHEN OTHERS THEN
+        RAISE NOTICE 'Invalid timestamp value: "%".  Returning NULL.', v_input;
+        RETURN NULL;
+    END;
+RETURN v_ts_value;
+END;
+$$ LANGUAGE plpgsql;
+
 DROP FUNCTION IF EXISTS "public"._airbyte_safe_cast_to_json(v_input text);
 
 CREATE OR REPLACE FUNCTION _airbyte_safe_cast_to_json(v_input text)
@@ -131,10 +146,10 @@ CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_loaded_at" ON z_airbyte.users
 
 -- Step 1: Load the raw data
 
-INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES ('{   "id": 1,   "first_name": "Evan",   "age": 38,   "address": {     "city": "San Francisco",     "zip": "94001"   } }', gen_random_uuid(), NOW());
-INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES ('{   "id": 2,   "first_name": "Brian",   "age": 39,   "address": {     "city": "Menlo Park",     "zip": "94002"   } }', gen_random_uuid(), NOW());
-INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES ('{   "id": 3,   "first_name": "Edward",   "age": 40,   "address": {     "city": "Sunyvale",     "zip": "94003"   } }', gen_random_uuid(), NOW());
-INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES ('{   "id": 4,   "first_name": "Joe",   "address": {     "city": "Seattle",     "zip": "98999"   } }', gen_random_uuid(), NOW()); -- Joe is missing an age, null OK
+INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES ('{   "id": 1,    "updated_at": "2020-01-01T00:00:00Z",   "first_name": "Evan",   "age": 38,   "address": {     "city": "San Francisco",     "zip": "94001"   } }', gen_random_uuid(), NOW());
+INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES ('{   "id": 2,    "updated_at": "2020-01-01T00:00:01Z",   "first_name": "Brian",   "age": 39,   "address": {     "city": "Menlo Park",     "zip": "94002"   } }', gen_random_uuid(), NOW());
+INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES ('{   "id": 3,    "updated_at": "2020-01-01T00:00:02Z",   "first_name": "Edward",   "age": 40,   "address": {     "city": "Sunyvale",     "zip": "94003"   } }', gen_random_uuid(), NOW());
+INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES ('{   "id": 4,    "updated_at": "2020-01-01T00:00:03Z",   "first_name": "Joe",   "address": {     "city": "Seattle",     "zip": "98999"   } }', gen_random_uuid(), NOW()); -- Joe is missing an age, null OK
 
 -- Step 2: Validate the incoming data
 -- We can't really do this properly in the pure-SQL example here, but we should throw if any row doesn't have a PK
@@ -155,10 +170,12 @@ SELECT
 	_airbyte_safe_cast_to_text(_airbyte_data ->> 'first_name') as first_name,
 	_airbyte_safe_cast_to_integer(_airbyte_data ->> 'age') as age,
 	_airbyte_safe_cast_to_json(_airbyte_data ->> 'address') as address,
+	_airbyte_safe_cast_to_timestamp(_airbyte_data ->> 'updated_at') as updated_at,
 	CASE
 		WHEN (_airbyte_data ->> 'id' IS NOT NULL) AND (_airbyte_safe_cast_to_integer(_airbyte_data ->> 'id') IS NULL) THEN '{"error": "Problem with `id`"}'
 		WHEN (_airbyte_data ->> 'first_name' IS NOT NULL) AND (_airbyte_safe_cast_to_text(_airbyte_data ->> 'first_name') IS NULL) THEN '{"error": "Problem with `first_name`"}'
 		WHEN (_airbyte_data ->> 'age' IS NOT NULL) AND (_airbyte_safe_cast_to_integer(_airbyte_data ->> 'age') IS NULL) THEN '{"error": "Problem with `age`"}'
+		WHEN (_airbyte_data ->> 'updated_at' IS NOT NULL) AND (_airbyte_safe_cast_to_timestamp(_airbyte_data ->> 'updated_at') IS NULL) THEN '{"error": "Problem with `updated_at`"}'
 		WHEN (_airbyte_data ->> 'address' IS NOT NULL) AND (_airbyte_safe_cast_to_json(_airbyte_data ->> 'address') IS NULL) THEN '{"error": "Problem with `address`"}'
 		ELSE '{}'
 	END::JSON as _airbyte_meta,
@@ -174,10 +191,11 @@ WHERE
 -- This is a full table scan, but we need to do it this way to merge the new rows with the old to:
 --   * Consider the case in which there are multiple entries for the same PK in the new insert batch
 --	 * Consider the case in which the data in the new batch is older than the data in the typed table, and we only want to keep the newer (pre-existing) data
+--   * Order by the source's provided cursor and _airbyte_extracted_at to break any ties
 
 WITH cte AS (
 	SELECT _airbyte_raw_id, row_number() OVER (
-		PARTITION BY id ORDER BY _airbyte_extracted_at DESC
+		PARTITION BY id ORDER BY updated_at DESC, _airbyte_extracted_at DESC
 	) as row_number FROM public.users
 )
 
@@ -240,9 +258,9 @@ CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_loaded_at" ON z_airbyte.users
 -- There is an update for Edward (user 3, age is invalid)
 -- No update for Joe (user 4)
 
-INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES ('{   "id": 1,   "first_name": "Evan",   "age": 39,   "address": {     "city": "San Francisco",     "zip": "94001"   } }', gen_random_uuid(), NOW());
-INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES ('{   "id": 2,   "first_name": "Brian",   "age": 39,   "address": {     "city": "Menlo Park",     "zip": "99999"   } }', gen_random_uuid(), NOW());
-INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES ('{   "id": 3,   "first_name": "Edward",   "age": "forty",   "address": {     "city": "Sunyvale",     "zip": "94003"   } }', gen_random_uuid(), NOW());
+INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES ('{   "id": 1,    "updated_at": "2020-01-02T00:00:00Z",   "first_name": "Evan",   "age": 39,   "address": {     "city": "San Francisco",     "zip": "94001"   } }', gen_random_uuid(), NOW());
+INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES ('{   "id": 2,    "updated_at": "2020-01-02T00:00:01Z",   "first_name": "Brian",   "age": 39,   "address": {     "city": "Menlo Park",     "zip": "99999"   } }', gen_random_uuid(), NOW());
+INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES ('{   "id": 3,    "updated_at": "2020-01-02T00:00:02Z",   "first_name": "Edward",   "age": "forty",   "address": {     "city": "Sunyvale",     "zip": "94003"   } }', gen_random_uuid(), NOW());
 
 -- Step 2: Validate the incoming data
 -- We can't really do this properly in the pure-SQL example here, but we should throw if any row doesn't have a PK
@@ -263,10 +281,12 @@ SELECT
 	_airbyte_safe_cast_to_text(_airbyte_data ->> 'first_name') as first_name,
 	_airbyte_safe_cast_to_integer(_airbyte_data ->> 'age') as age,
 	_airbyte_safe_cast_to_json(_airbyte_data ->> 'address') as address,
+	_airbyte_safe_cast_to_timestamp(_airbyte_data ->> 'updated_at') as updated_at,
 	CASE
 		WHEN (_airbyte_data ->> 'id' IS NOT NULL) AND (_airbyte_safe_cast_to_integer(_airbyte_data ->> 'id') IS NULL) THEN '{"error": "Problem with `id`"}'
 		WHEN (_airbyte_data ->> 'first_name' IS NOT NULL) AND (_airbyte_safe_cast_to_text(_airbyte_data ->> 'first_name') IS NULL) THEN '{"error": "Problem with `first_name`"}'
 		WHEN (_airbyte_data ->> 'age' IS NOT NULL) AND (_airbyte_safe_cast_to_integer(_airbyte_data ->> 'age') IS NULL) THEN '{"error": "Problem with `age`"}'
+		WHEN (_airbyte_data ->> 'updated_at' IS NOT NULL) AND (_airbyte_safe_cast_to_timestamp(_airbyte_data ->> 'updated_at') IS NULL) THEN '{"error": "Problem with `updated_at`"}'
 		WHEN (_airbyte_data ->> 'address' IS NOT NULL) AND (_airbyte_safe_cast_to_json(_airbyte_data ->> 'address') IS NULL) THEN '{"error": "Problem with `address`"}'
 		ELSE '{}'
 	END::JSON as _airbyte_meta,
@@ -282,10 +302,11 @@ WHERE
 -- This is a full table scan, but we need to do it this way to merge the new rows with the old to:
 --   * Consider the case in which there are multiple entries for the same PK in the new insert batch
 --	 * Consider the case in which the data in the new batch is older than the data in the typed table, and we only want to keep the newer (pre-existing) data
+--   * Order by the source's provided cursor and _airbyte_extracted_at to break any ties
 
 WITH cte AS (
 	SELECT _airbyte_raw_id, row_number() OVER (
-		PARTITION BY id ORDER BY _airbyte_extracted_at DESC
+		PARTITION BY id ORDER BY updated_at DESC, _airbyte_extracted_at DESC
 	) as row_number FROM public.users
 )
 
@@ -345,10 +366,10 @@ CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_loaded_at" ON z_airbyte.users
 -- Delete row 1 with CDC
 -- Insert multiple records for a new user (with age incrementing each time)
 
-INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES ('{   "id": 2,   "first_name": "Brian",   "age": 39,   "address": {     "city": "Menlo Park",     "zip": "99999"   }, "_ab_cdc_deleted_at": true}', gen_random_uuid(), NOW());
-INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES ('{   "id": 5,   "first_name": "Cynthia",   "age": 40,   "address": {     "city": "Redwood City",     "zip": "98765"   }}', gen_random_uuid(), NOW());
-INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES ('{   "id": 5,   "first_name": "Cynthia",   "age": 41,   "address": {     "city": "Redwood City",     "zip": "98765"   }}', gen_random_uuid(), NOW());
-INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES ('{   "id": 5,   "first_name": "Cynthia",   "age": 42,   "address": {     "city": "Redwood City",     "zip": "98765"   }}', gen_random_uuid(), NOW());
+INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES ('{   "id": 2,    "updated_at": "2020-01-03T00:00:00Z",   "first_name": "Brian",   "age": 39,   "address": {     "city": "Menlo Park",     "zip": "99999"   }, "_ab_cdc_deleted_at": true}', gen_random_uuid(), NOW());
+INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES ('{   "id": 5,    "updated_at": "2020-01-03T00:00:01Z",   "first_name": "Cynthia",   "age": 40,   "address": {     "city": "Redwood City",     "zip": "98765"   }}', gen_random_uuid(), NOW());
+INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES ('{   "id": 5,    "updated_at": "2020-01-03T00:00:02Z",   "first_name": "Cynthia",   "age": 41,   "address": {     "city": "Redwood City",     "zip": "98765"   }}', gen_random_uuid(), NOW());
+INSERT INTO z_airbyte.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES ('{   "id": 5,    "updated_at": "2020-01-03T00:00:03Z",   "first_name": "Cynthia",   "age": 42,   "address": {     "city": "Redwood City",     "zip": "98765"   }}', gen_random_uuid(), NOW());
 
 
 -- Step 2: Validate the incoming data
@@ -370,10 +391,12 @@ SELECT
 	_airbyte_safe_cast_to_text(_airbyte_data ->> 'first_name') as first_name,
 	_airbyte_safe_cast_to_integer(_airbyte_data ->> 'age') as age,
 	_airbyte_safe_cast_to_json(_airbyte_data ->> 'address') as address,
+	_airbyte_safe_cast_to_timestamp(_airbyte_data ->> 'updated_at') as updated_at,
 	CASE
 		WHEN (_airbyte_data ->> 'id' IS NOT NULL) AND (_airbyte_safe_cast_to_integer(_airbyte_data ->> 'id') IS NULL) THEN '{"error": "Problem with `id`"}'
 		WHEN (_airbyte_data ->> 'first_name' IS NOT NULL) AND (_airbyte_safe_cast_to_text(_airbyte_data ->> 'first_name') IS NULL) THEN '{"error": "Problem with `first_name`"}'
 		WHEN (_airbyte_data ->> 'age' IS NOT NULL) AND (_airbyte_safe_cast_to_integer(_airbyte_data ->> 'age') IS NULL) THEN '{"error": "Problem with `age`"}'
+		WHEN (_airbyte_data ->> 'updated_at' IS NOT NULL) AND (_airbyte_safe_cast_to_timestamp(_airbyte_data ->> 'updated_at') IS NULL) THEN '{"error": "Problem with `updated_at`"}'
 		WHEN (_airbyte_data ->> 'address' IS NOT NULL) AND (_airbyte_safe_cast_to_json(_airbyte_data ->> 'address') IS NULL) THEN '{"error": "Problem with `address`"}'
 		ELSE '{}'
 	END::JSON as _airbyte_meta,
@@ -389,10 +412,11 @@ WHERE
 -- This is a full table scan, but we need to do it this way to merge the new rows with the old to:
 --   * Consider the case in which there are multiple entries for the same PK in the new insert batch
 --	 * Consider the case in which the data in the new batch is older than the data in the typed table, and we only want to keep the newer (pre-existing) data
+--   * Order by the source's provided cursor and _airbyte_extracted_at to break any ties
 
 WITH cte AS (
 	SELECT _airbyte_raw_id, row_number() OVER (
-		PARTITION BY id ORDER BY _airbyte_extracted_at DESC
+		PARTITION BY id ORDER BY updated_at DESC, _airbyte_extracted_at DESC
 	) as row_number FROM public.users
 )
 
