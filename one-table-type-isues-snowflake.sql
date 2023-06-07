@@ -1,3 +1,21 @@
+/*
+SQL Experiments for Typing and Normalizing AirbyteRecords in 1 table
+Run me on Postgres
+
+Schema:
+{
+  "id": "number",
+  "first_name": ["string", null],
+  "age": ["number", null],
+  "address": [null, {
+    "street": "string",
+    "zip": "string"
+  }],
+	"updated_at": timestamp
+}
+*/
+
+
 DROP TABLE IF EXISTS PUBLIC.USERS;
 DROP TABLE IF EXISTS Z_AIRBYTE.USERS_RAW;
 
