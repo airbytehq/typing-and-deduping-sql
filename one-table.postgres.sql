@@ -29,13 +29,13 @@ DROP TABLE IF EXISTS z_airbyte.users_raw;
 
 CREATE TABLE public.users (
     "id" int8, -- PK cannot be null, but after raw insert and before typing, row will be null
-    "first_name" text,
-    "age" int8,
-    "address" json,
-    "updated_at" timestamp,
-    "_airbyte_meta" json NOT NULL, -- Airbyte column, cannot be null
-    "_airbyte_raw_id" uuid NOT NULL, -- Airbyte column, cannot be null
-    "_airbyte_extracted_at" timestamp NOT NULL -- Airbyte column, cannot be null
+    , "first_name" text
+    , "age" int8
+    , "address" json
+    , "updated_at" timestamp
+    , "_airbyte_meta" json NOT NULL -- Airbyte column, cannot be null
+    , "_airbyte_raw_id" uuid NOT NULL -- Airbyte column, cannot be null
+    , "_airbyte_extracted_at" timestamp NOT NULL -- Airbyte column, cannot be null
 );
 
 -- indexes for colums we will use

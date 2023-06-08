@@ -24,7 +24,7 @@ CREATE TABLE PUBLIC.USERS (
     ,"first_name" text
     ,"age" int
     ,"address" variant
-  	,"updated_at" timestamp -- NOT NULL
+  	,"updated_at" timestamp
     ,"_airbyte_meta" variant NOT NULL -- Airbyte column, cannot be null
     ,"_airbyte_raw_id" VARCHAR(36) NOT NULL -- Airbyte column, cannot be null
     ,"_airbyte_extracted_at" timestamp NOT NULL -- Airbyte column, cannot be null

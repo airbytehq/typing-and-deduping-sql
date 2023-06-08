@@ -27,14 +27,14 @@ DROP TABLE IF EXISTS PUBLIC.USERS;
 DROP TABLE IF EXISTS Z_AIRBYTE.USERS_RAW;
 
 CREATE TABLE PUBLIC.USERS (
-    "id" int PRIMARY KEY, -- PK cannot be null, but after raw insert and before typing, row will be null
-    "first_name" text,
-    "age" int,
-    "address" variant,
-		"updated_at" timestamp NOT NULL,
-    "_airbyte_meta" variant NOT NULL, -- Airbyte column, cannot be null
-    "_airbyte_raw_id" VARCHAR(36) NOT NULL, -- Airbyte column, cannot be null
-    "_airbyte_extracted_at" timestamp NOT NULL -- Airbyte column, cannot be null
+    "id" int PRIMARY KEY -- PK cannot be null, but after raw insert and before typing, row will be null
+    ,"first_name" text
+    ,"age" int
+    ,"address" variant
+  	,"updated_at" timestamp
+    ,"_airbyte_meta" variant NOT NULL -- Airbyte column, cannot be null
+    ,"_airbyte_raw_id" VARCHAR(36) NOT NULL -- Airbyte column, cannot be null
+    ,"_airbyte_extracted_at" timestamp NOT NULL -- Airbyte column, cannot be null
 );
 
 -------------------------------------
