@@ -56,7 +56,11 @@ BEGIN
 	    , `_airbyte_data` JSON NOT NULL OPTIONS (description = 'Airbyte column, cannot be null')
 	    , `_airbyte_extracted_at` TIMESTAMP NOT NULL OPTIONS (description = 'Airbyte column, cannot be null')
 	    , `_airbyte_loaded_at` TIMESTAMP
-	);
+	)
+	PARTITION BY (
+		DATE_TRUNC(_airbyte_extracted_at, MONTH)
+	)
+	;
 END
 ;
 
@@ -153,7 +157,6 @@ BEGIN
 	;
 
 END;
-$$ LANGUAGE plpgsql;
 
 ----------------------------
 --------- SYNC 1 -----------
