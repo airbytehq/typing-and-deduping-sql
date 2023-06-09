@@ -18,7 +18,6 @@ Schema:
 
 DROP TABLE IF EXISTS PUBLIC.USERS;
 DROP TABLE IF EXISTS Z_AIRBYTE.USERS_RAW;
-DROP TABLE IF EXISTS Z_AIRBYTE.USERS_RAW_TMP;
 
 CREATE TABLE PUBLIC.USERS (
     "id" int PRIMARY KEY -- PK cannot be null, but after raw insert and before typing, row will be null
@@ -144,41 +143,59 @@ BEGIN
 END
 $$;
 
-------------
--- SYNC 1 --
-------------
+----------------------------
+--------- BATCH 1 ----------
+----------------------------
 
 CALL PUBLIC._AIRBYTE_PREPARE_RAW_TABLE();
-CALL PUBLIC._AIRBYTE_PREPARE_RAW_TMP_TABLE();
 
 INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") SELECT PARSE_JSON($${
 	id: 1,
-	first_name: "Evan",
-	age: 38,
-	updated_at: "2020-01-01T00:00:00Z",
+	first_name: "CREATE JOE",
+	age: 35,
+	updated_at: "2020-01-01T00:00:01Z",
 	address:{
-		city: "San Francisco",
-		zip: "94001"
+		city: "Seattle",
+		zip: "99999"
 } }$$), UUID_STRING(), CURRENT_TIMESTAMP();
 
 CALL PUBLIC._AIRBYTE_TYPE_DEDUPE();
 
-------------
--- SYNC 2 --
-------------
+----------------------------
+--------- BATCH 2 ----------
+----------------------------
 
 CALL PUBLIC._AIRBYTE_PREPARE_RAW_TABLE();
-CALL PUBLIC._AIRBYTE_PREPARE_RAW_TMP_TABLE();
 
 INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") SELECT PARSE_JSON($${
-	id: 4,
-	first_name: "Joe",
-	age: 40,
+	_ab_cdc_deleted_at: true,
+	id: 1,
+	first_name: "DELETE JOE",
+	age: 35,
 	updated_at: "2020-01-01T00:00:03Z",
 	address:{
 		city: "Seattle",
-		zip: "98999"
+		zip: "99999"
 } }$$), UUID_STRING(), CURRENT_TIMESTAMP();
+
+CALL PUBLIC._AIRBYTE_TYPE_DEDUPE();
+
+----------------------------
+--------- BATCH 3 ----------
+----------------------------
+
+CALL PUBLIC._AIRBYTE_PREPARE_RAW_TABLE();
+
+INSERT INTO Z_AIRBYTE.USERS_RAW ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") SELECT PARSE_JSON($${
+	id: 1,
+	first_name: "UPDATE JOE",
+	age: 35,
+	updated_at: "2020-01-01T00:00:02Z",
+	address:{
+		city: "Seattle",
+		zip: "99999"
+} }$$), UUID_STRING(), CURRENT_TIMESTAMP();
+
 
 CALL PUBLIC._AIRBYTE_TYPE_DEDUPE();
 
@@ -187,7 +204,8 @@ CALL PUBLIC._AIRBYTE_TYPE_DEDUPE();
 ----------------------
 /*
 
-Evan should be gone, only Joe should remain.
+Joe should not exist in the final table, but in the raw table the most recent record (by cursor) should remain, the DELETE JOE entry.
+The "UPDATE JOE" entry should not be present in either the final or raw tables
 
 */
 
