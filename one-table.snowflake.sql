@@ -58,10 +58,26 @@ $$;
 CREATE OR REPLACE PROCEDURE PUBLIC._AIRBYTE_TYPE_DEDUPE()
 RETURNS TEXT LANGUAGE SQL AS $$
 BEGIN
-	-- Moving the data and deduping happens in a transaction to prevent duplicates from appearing
-	-- 	BEGIN;
+	-- Step 1: Validate the incoming data
+	-- We can't really do this properly in the pure-SQL example here, but we should throw if any row doesn't have a PK
 
-	-- Step 3: Move the new data to the typed table
+	let missing_pk_count := 0;
+	missing_pk_count := (
+		SELECT COUNT(1)
+		FROM Z_AIRBYTE.USERS_RAW
+		WHERE
+			"_airbyte_loaded_at" IS NULL
+			AND TRY_CAST("_airbyte_data":"id"::text AS INT) IS NULL
+		);
+
+	IF (missing_pk_count > 0) THEN
+    	RAISE STATEMENT_ERROR; -- TODO: make a custom exception
+ 	END IF;
+
+	-- Moving the data and deduping happens in a transaction to prevent duplicates from appearing
+	-- BEGIN
+
+	-- Step 2: Move the new data to the typed table
 	INSERT INTO PUBLIC.USERS
 	SELECT
 		TRY_CAST("_airbyte_data":"id"::text AS INT) as id,
@@ -87,7 +103,7 @@ BEGIN
 		AND "_airbyte_data":"_ab_cdc_deleted_at" IS NULL -- Skip CDC deleted rows (old records are already cleared away above
 	;
 
-	-- Step 4: Dedupe and clean the typed table
+	-- Step 3: Dedupe and clean the typed table
 	-- This is a full table scan, but we need to do it this way to merge the new rows with the old to:
 	--   * Consider the case in which there are multiple entries for the same PK in the new insert batch
 	--	 * Consider the case in which the data in the new batch is older than the data in the typed table, and we only want to keep the newer (pre-existing) data
@@ -113,7 +129,7 @@ BEGIN
 		)
 	;
 
-	-- Step 5: Remove old entries from Raw table
+	-- Step 4: Remove old entries from Raw table
 	DELETE FROM Z_AIRBYTE.USERS_RAW
 	WHERE
 		"_airbyte_raw_id" NOT IN (
@@ -123,7 +139,7 @@ BEGIN
 		"_airbyte_data":"_ab_cdc_deleted_at" IS NULL -- we want to keep the final _ab_cdc_deleted_at=true entry in the raw table for the deleted record
 	;
 
-	-- Step 6: Apply typed_at timestamp where needed
+	-- Step 5: Apply typed_at timestamp where needed
 	UPDATE Z_AIRBYTE.USERS_RAW
 	SET "_airbyte_loaded_at" = CURRENT_TIMESTAMP()
 	WHERE "_airbyte_loaded_at" IS NULL
