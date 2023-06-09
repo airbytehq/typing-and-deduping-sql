@@ -163,7 +163,7 @@ BEGIN
 		);
 
 	IF missing_pk_count > 0 THEN
-		RAISE EXCEPTION 'Table % has % rows missing a primary key', raw_table, missing_pk_count;
+		RAISE EXCEPTION 'Raw table has % rows missing a primary key', missing_pk_count;
 	END IF;
 
 	-- Moving the data and deduping happens in a transaction to prevent duplicates from appearing
