@@ -41,8 +41,8 @@ PARTITION BY (
 	DATE_TRUNC(_airbyte_extracted_at, DAY)
 	-- TODO: Learn about partition_expiration_days https://cloud.google.com/bigquery/docs/creating-partitioned-tables
 ) CLUSTER BY
-  id, _airbyte_extracted_at;
-) OPTIONS (
+  id, _airbyte_extracted_at
+OPTIONS (
 	description="users table"
 )
 ;
@@ -61,15 +61,15 @@ BEGIN
 	)
 	PARTITION BY (
 		DATE_TRUNC(_airbyte_extracted_at, DAY)
-	) CLUSTER BY (
+	) CLUSTER BY
 		_airbyte_loaded_at
-	)
 	;
 END
 ;
 
 
 CREATE OR REPLACE PROCEDURE evan._airbyte_type_dedupe()
+OPTIONS(strict_mode=FALSE)
 BEGIN
 
 	-- Step 1: Validate the incoming data
