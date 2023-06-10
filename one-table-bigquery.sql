@@ -38,8 +38,10 @@ CREATE TABLE evan.users (
   , `_airbyte_extracted_at` TIMESTAMP NOT NULL OPTIONS (description = 'Airbyte column, cannot be null')
 )
 PARTITION BY (
-	DATE_TRUNC(_airbyte_extracted_at, MONTH)
+	DATE_TRUNC(_airbyte_extracted_at, DAY)
 	-- TODO: Learn about partition_expiration_days https://cloud.google.com/bigquery/docs/creating-partitioned-tables
+) CLUSTER BY
+  id, _airbyte_extracted_at;
 ) OPTIONS (
 	description="users table"
 )
@@ -58,7 +60,9 @@ BEGIN
 	    , `_airbyte_loaded_at` TIMESTAMP
 	)
 	PARTITION BY (
-		DATE_TRUNC(_airbyte_extracted_at, MONTH)
+		DATE_TRUNC(_airbyte_extracted_at, DAY)
+	) CLUSTER BY (
+		_airbyte_loaded_at
 	)
 	;
 END
