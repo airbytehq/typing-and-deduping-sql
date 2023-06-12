@@ -92,10 +92,7 @@ There's also a `gcs://airbyte-performance-testing-public/typing-deduping-testing
 If you want to seed a big test database:
 
 ```sql
-DROP TABLE IF EXISTS evan.users;
-DROP TABLE IF EXISTS evan.users_raw;
-
-CREATE TABLE evan.users (
+CREATE TABLE IF NOT EXISTS testing_evan_2052.users (
     `id` INT64 OPTIONS (description = 'PK cannot be null, but after raw insert and before typing, row will be temporarily null')
   , `first_name` STRING
   , `age` INT64
@@ -115,8 +112,8 @@ OPTIONS (
 )
 ;
 
-CREATE TABLE IF NOT EXISTS evan.users_raw (
-    `_airbyte_raw_id` STRING NOT NULL OPTIONS (description = 'Airbyte column, cannot be null')
+CREATE TABLE IF NOT EXISTS testing_evan_2052.users_raw (
+        `_airbyte_raw_id` STRING NOT NULL OPTIONS (description = 'Airbyte column, cannot be null')
     , `_airbyte_data` JSON NOT NULL OPTIONS (description = 'Airbyte column, cannot be null')
     , `_airbyte_extracted_at` TIMESTAMP NOT NULL OPTIONS (description = 'Airbyte column, cannot be null')
     , `_airbyte_loaded_at` TIMESTAMP
@@ -124,42 +121,39 @@ CREATE TABLE IF NOT EXISTS evan.users_raw (
 -- no partition, no cluster
 ;
 
-TRUNCATE TABLE `evan`.`users_raw`;
-TRUNCATE TABLE `evan`.`users`;
+TRUNCATE TABLE `testing_evan_2052`.`users_raw`;
+TRUNCATE TABLE `testing_evan_2052`.`users`;
 
 -- Load in the data (CSV)
 -- NOTE: We have to use overwrite because BQ can handle writing CSVs to non-nullable columns.  This will alter the table to match the CSV and remove any partitioning or non-nullable-ness
 
-LOAD DATA OVERWRITE evan.users_raw
-FROM FILES (
-	format = 'CSV',
-	uris = ['gs://airbyte-performance-testing-public/typing-deduping-testing/users_raw.csv'],
-	skip_leading_rows = 1,
-	field_delimiter = "\t"
-);
+BEGIN TRANSACTION;
+	LOAD DATA OVERWRITE testing_evan_2052.users_raw
+	FROM FILES (
+	  format = 'CSV',
+	  uris = ['gs://airbyte-performance-testing-public/typing-deduping-testing/users_raw.csv'],
+	  skip_leading_rows = 1,
+	  field_delimiter = "\t"
+	);
 
--- fix CSV load problems
-ALTER TABLE evan.users_raw ADD COLUMN _airbyte_loaded_at_timestamp TIMESTAMP;
-UPDATE evan.users_raw SET _airbyte_loaded_at_timestamp = CAST(_airbyte_loaded_at AS TIMESTAMP) WHERE _airbyte_loaded_at_timestamp IS NULL;
-ALTER TABLE evan.users_raw DROP COLUMN _airbyte_loaded_at;
-ALTER TABLE evan.users_raw RENAME COLUMN _airbyte_loaded_at_timestamp to _airbyte_loaded_at;
+	-- fix CSV load problems
+	ALTER TABLE testing_evan_2052.users_raw ADD COLUMN _airbyte_data_json JSON;
+	UPDATE testing_evan_2052.users_raw SET _airbyte_data_json = PARSE_JSON(_airbyte_data) WHERE _airbyte_data_json IS NULL;
+	ALTER TABLE testing_evan_2052.users_raw DROP COLUMN _airbyte_data;
+	ALTER TABLE testing_evan_2052.users_raw RENAME COLUMN _airbyte_data_json to _airbyte_data;
 
-ALTER TABLE evan.users_raw ADD COLUMN _airbyte_data_json JSON;
-UPDATE evan.users_raw SET _airbyte_data_json = PARSE_JSON(_airbyte_data) WHERE _airbyte_data_json IS NULL;
-ALTER TABLE evan.users_raw DROP COLUMN _airbyte_data;
-ALTER TABLE evan.users_raw RENAME COLUMN _airbyte_data_json to _airbyte_data;
+	-- update the _airbyte_raw_ids each time
+	UPDATE testing_evan_2052.users_raw
+	SET `_airbyte_raw_id` = GENERATE_UUID()
+	WHERE `_airbyte_loaded_at` IS NULL
+	;
+COMMIT TRANSACTION;
 
--- update the _airbyte_raw_ids each time
-UPDATE evan.users_raw
-SET `_airbyte_raw_id` = GENERATE_UUID()
-WHERE `_airbyte_loaded_at` IS NULL
-;
-
-select count(*) from evan.users_raw;
-select count(*) from evan.users;
+select count(*) from testing_evan_2052.users_raw;
+select count(*) from testing_evan_2052.users;
 
 -- do it; loaded from .sql files in this repo
-CALL evan._airbyte_type_dedupe();
+CALL testing_evan_2052._airbyte_type_dedupe();
 ```
 
 ### BigQuery Observations
