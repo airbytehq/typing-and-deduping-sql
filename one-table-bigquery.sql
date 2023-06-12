@@ -84,7 +84,7 @@ BEGIN
       FROM testing_evan_2052.users_raw
       WHERE
         `_airbyte_loaded_at` IS NULL
-        AND SAFE_CAST(JSON_EXTRACT_SCALAR(`_airbyte_data`, '$.id') as INT64) IS NULL
+        AND SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.id') as INT64) IS NULL
       );
 
     IF missing_pk_count > 0 THEN
@@ -97,16 +97,16 @@ BEGIN
     -- Step 2: Move the new data to the typed table
     INSERT INTO testing_evan_2052.users
     SELECT
-      SAFE_CAST(JSON_EXTRACT_SCALAR(`_airbyte_data`, '$.id') as INT64) as id,
-      SAFE_CAST(JSON_EXTRACT_SCALAR(`_airbyte_data`, '$.first_name') as STRING) as first_name,
-      SAFE_CAST(JSON_EXTRACT_SCALAR(`_airbyte_data`, '$.age') as INT64) as age,
-      SAFE_CAST(JSON_QUERY(`_airbyte_data`, '$.address') as JSON) as address, -- NOTE: For record properties remaining as JSON, you `JSON_QUERY`, not `JSON_EXTRACT_SCALAR`
-      SAFE_CAST(JSON_EXTRACT_SCALAR(`_airbyte_data`, '$.updated_at') as TIMESTAMP) as updated_at,
+      SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.id') as INT64) as id,
+      SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.first_name') as STRING) as first_name,
+      SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.age') as INT64) as age,
+      SAFE_CAST(JSON_QUERY(`_airbyte_data`, '$.address') as JSON) as address, -- NOTE: For record properties remaining as JSON, you `JSON_QUERY`, not `JSON_VALUE`
+      SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.updated_at') as TIMESTAMP) as updated_at,
       CASE
-        WHEN (JSON_EXTRACT_SCALAR(`_airbyte_data`, '$.id') IS NOT NULL) AND (SAFE_CAST(JSON_EXTRACT_SCALAR(`_airbyte_data`, '$.id') as INT64) IS NULL) THEN JSON'{"error": "Problem with `id`"}'
-        WHEN (JSON_EXTRACT_SCALAR(`_airbyte_data`, '$.first_name') IS NOT NULL) AND (SAFE_CAST(JSON_EXTRACT_SCALAR(`_airbyte_data`, '$.first_name') as STRING) IS NULL) THEN JSON'{"error": "Problem with `first_name`"}'
-        WHEN (JSON_EXTRACT_SCALAR(`_airbyte_data`, '$.age') IS NOT NULL) AND (SAFE_CAST(JSON_EXTRACT_SCALAR(`_airbyte_data`, '$.age') as INT64) IS NULL) THEN JSON'{"error": "Problem with `age`"}'
-        WHEN (JSON_EXTRACT_SCALAR(`_airbyte_data`, '$.updated_at') IS NOT NULL) AND (SAFE_CAST(JSON_EXTRACT_SCALAR(`_airbyte_data`, '$.updated_at') as TIMESTAMP) IS NULL) THEN JSON'{"error": "Problem with `updated_at`"}'
+        WHEN (JSON_VALUE(`_airbyte_data`, '$.id') IS NOT NULL) AND (SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.id') as INT64) IS NULL) THEN JSON'{"error": "Problem with `id`"}'
+        WHEN (JSON_VALUE(`_airbyte_data`, '$.first_name') IS NOT NULL) AND (SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.first_name') as STRING) IS NULL) THEN JSON'{"error": "Problem with `first_name`"}'
+        WHEN (JSON_VALUE(`_airbyte_data`, '$.age') IS NOT NULL) AND (SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.age') as INT64) IS NULL) THEN JSON'{"error": "Problem with `age`"}'
+        WHEN (JSON_VALUE(`_airbyte_data`, '$.updated_at') IS NOT NULL) AND (SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.updated_at') as TIMESTAMP) IS NULL) THEN JSON'{"error": "Problem with `updated_at`"}'
         WHEN (JSON_QUERY(`_airbyte_data`, '$.address') IS NOT NULL) AND (SAFE_CAST(JSON_QUERY(`_airbyte_data`, '$.address') as JSON) IS NULL) THEN JSON'{"error": "Problem with `address`"}'
         ELSE JSON'{}'
       END as _airbyte_meta,
@@ -141,9 +141,9 @@ BEGIN
       -- Delete rows that have been CDC deleted
       `id` IN (
         SELECT
-          SAFE_CAST(JSON_EXTRACT_SCALAR(`_airbyte_data`, '$.id') as INT64) as id -- based on the PK which we know from the connector catalog
+          SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.id') as INT64) as id -- based on the PK which we know from the connector catalog
         FROM testing_evan_2052.users_raw
-        WHERE JSON_EXTRACT_SCALAR(`_airbyte_data`, '$._ab_cdc_deleted_at') IS NOT NULL
+        WHERE JSON_VALUE(`_airbyte_data`, '$._ab_cdc_deleted_at') IS NOT NULL
       )
     ;
 
@@ -155,7 +155,7 @@ BEGIN
         SELECT `_airbyte_raw_id` FROM testing_evan_2052.users
       )
       AND
-      JSON_EXTRACT_SCALAR(`_airbyte_data`, '$._ab_cdc_deleted_at') IS NULL -- we want to keep the final _ab_cdc_deleted_at=true entry in the raw table for the deleted record
+      JSON_VALUE(`_airbyte_data`, '$._ab_cdc_deleted_at') IS NULL -- we want to keep the final _ab_cdc_deleted_at=true entry in the raw table for the deleted record
     ;
 
     -- Step 5: Apply typed_at timestamp where needed
