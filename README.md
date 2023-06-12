@@ -127,27 +127,65 @@ TRUNCATE TABLE `testing_evan_2052`.`users`;
 -- Load in the data (CSV)
 -- NOTE: We have to use overwrite because BQ can handle writing CSVs to non-nullable columns.  This will alter the table to match the CSV and remove any partitioning or non-nullable-ness
 
-BEGIN TRANSACTION;
-	LOAD DATA OVERWRITE testing_evan_2052.users_raw
-	FROM FILES (
-	  format = 'CSV',
-	  uris = ['gs://airbyte-performance-testing-public/typing-deduping-testing/users_raw.csv'],
-	  skip_leading_rows = 1,
-	  field_delimiter = "\t"
-	);
+CREATE TABLE IF NOT EXISTS testing_evan_2052.users (
+    `id` INT64 OPTIONS (description = 'PK cannot be null, but after raw insert and before typing, row will be temporarily null')
+  , `first_name` STRING
+  , `age` INT64
+  , `address` JSON
+  , `updated_at` TIMESTAMP
+  , `_airbyte_meta` JSON NOT NULL OPTIONS (description = 'Airbyte column, cannot be null')
+  , `_airbyte_raw_id` STRING NOT NULL OPTIONS (description = 'Airbyte column, cannot be null')
+  , `_airbyte_extracted_at` TIMESTAMP NOT NULL OPTIONS (description = 'Airbyte column, cannot be null')
+)
+PARTITION BY (
+	DATE_TRUNC(_airbyte_extracted_at, DAY)
+	-- TODO: Learn about partition_expiration_days https://cloud.google.com/bigquery/docs/creating-partitioned-tables
+) CLUSTER BY
+  id, _airbyte_extracted_at
+OPTIONS (
+	description="users table"
+)
+;
 
-	-- fix CSV load problems
-	ALTER TABLE testing_evan_2052.users_raw ADD COLUMN _airbyte_data_json JSON;
-	UPDATE testing_evan_2052.users_raw SET _airbyte_data_json = PARSE_JSON(_airbyte_data) WHERE _airbyte_data_json IS NULL;
-	ALTER TABLE testing_evan_2052.users_raw DROP COLUMN _airbyte_data;
-	ALTER TABLE testing_evan_2052.users_raw RENAME COLUMN _airbyte_data_json to _airbyte_data;
+CREATE TABLE IF NOT EXISTS testing_evan_2052.users_raw (
+        `_airbyte_raw_id` STRING NOT NULL OPTIONS (description = 'Airbyte column, cannot be null')
+    , `_airbyte_data` JSON NOT NULL OPTIONS (description = 'Airbyte column, cannot be null')
+    , `_airbyte_extracted_at` TIMESTAMP NOT NULL OPTIONS (description = 'Airbyte column, cannot be null')
+    , `_airbyte_loaded_at` TIMESTAMP
+)
+-- no partition, no cluster
+;
 
-	-- update the _airbyte_raw_ids each time
-	UPDATE testing_evan_2052.users_raw
-	SET `_airbyte_raw_id` = GENERATE_UUID()
-	WHERE `_airbyte_loaded_at` IS NULL
-	;
-COMMIT TRANSACTION;
+TRUNCATE TABLE `testing_evan_2052`.`users_raw`;
+TRUNCATE TABLE `testing_evan_2052`.`users`;
+
+-- Load in the data (CSV)
+-- NOTE: We have to use overwrite because BQ can handle writing CSVs to non-nullable columns.  This will alter the table to match the CSV and remove any partitioning or non-nullable-ness
+
+DROP TABLE IF EXISTS testing_evan_2052.users_raw_tmp;
+LOAD DATA OVERWRITE testing_evan_2052.users_raw_tmp
+FROM FILES (
+  format = 'CSV',
+  uris = ['gs://airbyte-performance-testing-public/typing-deduping-testing/users_raw.csv'],
+  skip_leading_rows = 1,
+  field_delimiter = "\t"
+);
+
+INSERT INTO testing_evan_2052.users_raw (
+  _airbyte_raw_id, _airbyte_data, _airbyte_extracted_at
+) SELECT
+    _airbyte_raw_id
+  , PARSE_JSON(_airbyte_data)
+  , CAST(_airbyte_extracted_at AS timestamp)
+FROM testing_evan_2052.users_raw_tmp;
+
+DROP TABLE IF EXISTS testing_evan_2052.users_raw_tmp;
+
+-- update the _airbyte_raw_ids each time
+UPDATE testing_evan_2052.users_raw
+SET `_airbyte_raw_id` = GENERATE_UUID()
+WHERE `_airbyte_loaded_at` IS NULL
+;
 
 select count(*) from testing_evan_2052.users_raw;
 select count(*) from testing_evan_2052.users;
