@@ -92,38 +92,6 @@ There's also a `gcs://airbyte-performance-testing-public/typing-deduping-testing
 If you want to seed a big test database:
 
 ```sql
-CREATE TABLE IF NOT EXISTS testing_evan_2052.users (
-    `id` INT64 OPTIONS (description = 'PK cannot be null, but after raw insert and before typing, row will be temporarily null')
-  , `first_name` STRING
-  , `age` INT64
-  , `address` JSON
-  , `updated_at` TIMESTAMP
-  , `_airbyte_meta` JSON NOT NULL OPTIONS (description = 'Airbyte column, cannot be null')
-  , `_airbyte_raw_id` STRING NOT NULL OPTIONS (description = 'Airbyte column, cannot be null')
-  , `_airbyte_extracted_at` TIMESTAMP NOT NULL OPTIONS (description = 'Airbyte column, cannot be null')
-)
-PARTITION BY (
-	DATE_TRUNC(_airbyte_extracted_at, DAY)
-	-- TODO: Learn about partition_expiration_days https://cloud.google.com/bigquery/docs/creating-partitioned-tables
-) CLUSTER BY
-  id, _airbyte_extracted_at
-OPTIONS (
-	description="users table"
-)
-;
-
-CREATE TABLE IF NOT EXISTS testing_evan_2052.users_raw (
-        `_airbyte_raw_id` STRING NOT NULL OPTIONS (description = 'Airbyte column, cannot be null')
-    , `_airbyte_data` JSON NOT NULL OPTIONS (description = 'Airbyte column, cannot be null')
-    , `_airbyte_extracted_at` TIMESTAMP NOT NULL OPTIONS (description = 'Airbyte column, cannot be null')
-    , `_airbyte_loaded_at` TIMESTAMP
-)
--- no partition, no cluster
-;
-
-TRUNCATE TABLE `testing_evan_2052`.`users_raw`;
-TRUNCATE TABLE `testing_evan_2052`.`users`;
-
 -- Load in the data (CSV)
 -- NOTE: We have to use overwrite because BQ can handle writing CSVs to non-nullable columns.  This will alter the table to match the CSV and remove any partitioning or non-nullable-ness
 
