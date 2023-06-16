@@ -1,6 +1,8 @@
 /*
 SQL Experiments for Typing and Normalizing AirbyteRecords in 1 table
-Run me on Postgres
+Run me on snowflake.
+
+This example tests out of order CDC records with a deletion
 
 Schema:
 {
