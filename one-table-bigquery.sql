@@ -1,6 +1,6 @@
 /*
 SQL Experiments for Typing and Normalizing AirbyteRecords in 1 table
-Run me on Postgres
+Run me on BQ
 
 Schema:
 {
@@ -11,7 +11,7 @@ Schema:
     "street": "string",
     "zip": "string"
   }],
-	"updated_at": timestamp
+  "updated_at": timestamp
 }
 
 KNOWN LIMITATIONS
@@ -38,12 +38,12 @@ CREATE TABLE testing_evan_2052.users (
   , `_airbyte_extracted_at` TIMESTAMP NOT NULL OPTIONS (description = 'Airbyte column, cannot be null')
 )
 PARTITION BY (
-	DATE_TRUNC(_airbyte_extracted_at, DAY)
-	-- TODO: Learn about partition_expiration_days https://cloud.google.com/bigquery/docs/creating-partitioned-tables
+  DATE_TRUNC(_airbyte_extracted_at, DAY)
+  -- TODO: Learn about partition_expiration_days https://cloud.google.com/bigquery/docs/creating-partitioned-tables
 ) CLUSTER BY
   id, _airbyte_extracted_at
 OPTIONS (
-	description="users table"
+  description="users table"
 )
 ;
 
@@ -53,26 +53,24 @@ OPTIONS (
 
 CREATE OR REPLACE PROCEDURE testing_evan_2052._airbyte_prepare_raw_table()
 BEGIN
-	CREATE TABLE IF NOT EXISTS testing_evan_2052.users_raw (
-	      `_airbyte_raw_id` STRING NOT NULL OPTIONS (description = 'Airbyte column, cannot be null')
-	    , `_airbyte_data` JSON NOT NULL OPTIONS (description = 'Airbyte column, cannot be null')
-	    , `_airbyte_extracted_at` TIMESTAMP NOT NULL OPTIONS (description = 'Airbyte column, cannot be null')
-	    , `_airbyte_loaded_at` TIMESTAMP
-	)
-	PARTITION BY (
-		DATE_TRUNC(_airbyte_extracted_at, DAY)
-	) CLUSTER BY
-		_airbyte_loaded_at
-	;
+  CREATE TABLE IF NOT EXISTS testing_evan_2052.users_raw (
+        `_airbyte_raw_id` STRING NOT NULL OPTIONS (description = 'Airbyte column, cannot be null')
+      , `_airbyte_data` JSON NOT NULL OPTIONS (description = 'Airbyte column, cannot be null')
+      , `_airbyte_extracted_at` TIMESTAMP NOT NULL OPTIONS (description = 'Airbyte column, cannot be null')
+      , `_airbyte_loaded_at` TIMESTAMP
+  )
+  PARTITION BY (
+    DATE_TRUNC(_airbyte_extracted_at, DAY)
+  ) CLUSTER BY
+    _airbyte_loaded_at
+  ;
 END
 ;
-
-
 
 CREATE OR REPLACE PROCEDURE testing_evan_2052._airbyte_type_dedupe()
 OPTIONS (strict_mode=FALSE)
 BEGIN
-	DECLARE missing_pk_count INT64;
+  DECLARE missing_pk_count INT64;
 
   BEGIN TRANSACTION;
 
@@ -96,6 +94,17 @@ BEGIN
 
     -- Step 2: Move the new data to the typed table
     INSERT INTO testing_evan_2052.users
+    (
+      id,
+      first_name,
+      age,
+      updated_at,
+      address,
+      _airbyte_meta,
+      _airbyte_raw_id,
+      _airbyte_extracted_at
+    )
+
     WITH intermediate_data AS (
       SELECT
         SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.id') as INT64) as id,
@@ -133,6 +142,7 @@ BEGIN
         _airbyte_loaded_at IS NULL -- inserting only new/null values, we can recover from failed previous checkpoints
         AND JSON_EXTRACT(`_airbyte_data`, '$._ab_cdc_deleted_at') IS NULL -- Skip CDC deleted rows (old records are already cleared away above
     )
+
     SELECT
       `id`,
       `first_name`,
@@ -140,7 +150,7 @@ BEGIN
       `updated_at`,
       `address`,
       CASE
-        WHEN array_length(_airbyte_cast_errors) = 0 THEN JSON'{}'
+        WHEN array_length(_airbyte_cast_errors) = 0 THEN JSON'{"errors": []}'
         ELSE to_json(struct(_airbyte_cast_errors AS errors))
       END AS _airbyte_meta,
       _airbyte_raw_id,
