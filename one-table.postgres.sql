@@ -11,7 +11,7 @@ Schema:
     "street": "string",
     "zip": "string"
   }],
-	"updated_at": timestamp
+  "updated_at": timestamp
 }
 
 KNOWN LIMITATIONS
@@ -28,14 +28,14 @@ DROP TABLE IF EXISTS public.users;
 DROP TABLE IF EXISTS z_airbyte.users_raw;
 
 CREATE TABLE public.users (
-    "id" int8, -- PK cannot be null, but after raw insert and before typing, row will be null
+    "_airbyte_raw_id" uuid NOT NULL -- Airbyte column, cannot be null
+    , "_airbyte_meta" json NOT NULL -- Airbyte column, cannot be null
+    , "_airbyte_extracted_at" timestamp NOT NULL -- Airbyte column, cannot be null
+    , "id" int8 -- PK cannot be null, but after raw insert and before typing, row will be null
     , "first_name" text
     , "age" int8
     , "address" json
     , "updated_at" timestamp
-    , "_airbyte_meta" json NOT NULL -- Airbyte column, cannot be null
-    , "_airbyte_raw_id" uuid NOT NULL -- Airbyte column, cannot be null
-    , "_airbyte_extracted_at" timestamp NOT NULL -- Airbyte column, cannot be null
 );
 
 -- indexes for colums we will use
@@ -129,18 +129,18 @@ CREATE OR REPLACE FUNCTION _airbyte_prepare_raw_table()
 RETURNS TEXT AS $$
 
 BEGIN
-	CREATE SCHEMA IF NOT EXISTS z_airbyte;
-	CREATE TABLE IF NOT EXISTS z_airbyte.users_raw (
-	    "_airbyte_raw_id" uuid NOT NULL, -- Airbyte column, cannot be null
-	    "_airbyte_data" json NOT NULL, -- Airbyte column, cannot be null
-	    "_airbyte_extracted_at" timestamp NOT NULL, -- Airbyte column, cannot be null
-	    "_airbyte_loaded_at" timestamp, -- Airbyte column
-	    PRIMARY KEY ("_airbyte_raw_id")
-	);
-	CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_raw_id" ON z_airbyte.users_raw USING BTREE ("_airbyte_raw_id");
-	CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_extracted_at" ON z_airbyte.users_raw USING BTREE ("_airbyte_extracted_at");
-	CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_loaded_at" ON z_airbyte.users_raw USING BTREE ("_airbyte_loaded_at");
-	RETURN 'SUCCESS';
+  CREATE SCHEMA IF NOT EXISTS z_airbyte;
+  CREATE TABLE IF NOT EXISTS z_airbyte.users_raw (
+      "_airbyte_raw_id" uuid NOT NULL, -- Airbyte column, cannot be null
+      "_airbyte_data" json NOT NULL, -- Airbyte column, cannot be null
+      "_airbyte_extracted_at" timestamp NOT NULL, -- Airbyte column, cannot be null
+      "_airbyte_loaded_at" timestamp, -- Airbyte column
+      PRIMARY KEY ("_airbyte_raw_id")
+  );
+  CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_raw_id" ON z_airbyte.users_raw USING BTREE ("_airbyte_raw_id");
+  CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_extracted_at" ON z_airbyte.users_raw USING BTREE ("_airbyte_extracted_at");
+  CREATE INDEX IF NOT EXISTS "idx_users_raw__airbyte_loaded_at" ON z_airbyte.users_raw USING BTREE ("_airbyte_loaded_at");
+  RETURN 'SUCCESS';
 END;
 $$ LANGUAGE plpgsql;
 
@@ -152,94 +152,123 @@ DECLARE missing_pk_count INTEGER DEFAULT 0;
 
 BEGIN
 
-	-- Step 1: Validate the incoming data
-	-- We can't really do this properly in the pure-SQL example here, but we should throw if any row doesn't have a PK
-	missing_pk_count := (
-		SELECT COUNT(1)
-		FROM Z_AIRBYTE.USERS_RAW
-		WHERE
-			"_airbyte_loaded_at" IS NULL
-			AND _airbyte_safe_cast_to_integer(_airbyte_data ->> 'id') IS NULL
-		);
+  -- Step 1: Validate the incoming data
+  -- We can't really do this properly in the pure-SQL example here, but we should throw if any row doesn't have a PK
+  missing_pk_count := (
+    SELECT COUNT(1)
+    FROM Z_AIRBYTE.USERS_RAW
+    WHERE
+      "_airbyte_loaded_at" IS NULL
+      AND _airbyte_safe_cast_to_integer(_airbyte_data ->> 'id') IS NULL
+    );
 
-	IF missing_pk_count > 0 THEN
-		RAISE EXCEPTION 'Table % has % rows missing a primary key', raw_table, missing_pk_count;
-	END IF;
+  IF missing_pk_count > 0 THEN
+    RAISE EXCEPTION 'Table % has % rows missing a primary key', raw_table, missing_pk_count;
+  END IF;
 
-	-- Moving the data and deduping happens in a transaction to prevent duplicates from appearing
-	-- BEGIN
+  -- Moving the data and deduping happens in a transaction to prevent duplicates from appearing
+  -- BEGIN
 
-	-- Step 2: Move the new data to the typed table
-	INSERT INTO public.users
-	SELECT
-		_airbyte_safe_cast_to_integer(_airbyte_data ->> 'id') as id,
-		_airbyte_safe_cast_to_text(_airbyte_data ->> 'first_name') as first_name,
-		_airbyte_safe_cast_to_integer(_airbyte_data ->> 'age') as age,
-		_airbyte_safe_cast_to_json(_airbyte_data ->> 'address') as address,
-		_airbyte_safe_cast_to_timestamp(_airbyte_data ->> 'updated_at') as updated_at,
-		CASE
-			WHEN (_airbyte_data ->> 'id' IS NOT NULL) AND (_airbyte_safe_cast_to_integer(_airbyte_data ->> 'id') IS NULL) THEN '{"error": "Problem with `id`"}'
-			WHEN (_airbyte_data ->> 'first_name' IS NOT NULL) AND (_airbyte_safe_cast_to_text(_airbyte_data ->> 'first_name') IS NULL) THEN '{"error": "Problem with `first_name`"}'
-			WHEN (_airbyte_data ->> 'age' IS NOT NULL) AND (_airbyte_safe_cast_to_integer(_airbyte_data ->> 'age') IS NULL) THEN '{"error": "Problem with `age`"}'
-			WHEN (_airbyte_data ->> 'updated_at' IS NOT NULL) AND (_airbyte_safe_cast_to_timestamp(_airbyte_data ->> 'updated_at') IS NULL) THEN '{"error": "Problem with `updated_at`"}'
-			WHEN (_airbyte_data ->> 'address' IS NOT NULL) AND (_airbyte_safe_cast_to_json(_airbyte_data ->> 'address') IS NULL) THEN '{"error": "Problem with `address`"}'
-			ELSE '{}'
-		END::JSON as _airbyte_meta,
-		_airbyte_raw_id,
-		_airbyte_extracted_at
-	FROM z_airbyte.users_raw
-	WHERE
-		_airbyte_loaded_at IS NULL -- inserting only new/null values, we can recover from failed previous checkpoints
-		AND _airbyte_data ->> '_ab_cdc_deleted_at' IS NULL -- Skip CDC deleted rows (old records are already cleared away above
-	;
+  -- Step 2: Move the new data to the typed table
+  WITH intermediate_data AS (
+    SELECT
+      _airbyte_safe_cast_to_integer(_airbyte_data ->> 'id') as id,
+      _airbyte_safe_cast_to_text(_airbyte_data ->> 'first_name') as first_name,
+      _airbyte_safe_cast_to_integer(_airbyte_data ->> 'age') as age,
+      _airbyte_safe_cast_to_json(_airbyte_data ->> 'address') as address,
+      _airbyte_safe_cast_to_timestamp(_airbyte_data ->> 'updated_at') as updated_at,
+      (
+        CASE WHEN (_airbyte_data ->> 'id' IS NOT NULL) AND (_airbyte_safe_cast_to_integer(_airbyte_data ->> 'id') IS NULL) THEN ARRAY['Problem with `id`'] ELSE ARRAY[]::text[] END
+        ||
+        CASE WHEN (_airbyte_data ->> 'first_name' IS NOT NULL) AND (_airbyte_safe_cast_to_text(_airbyte_data ->> 'first_name') IS NULL) THEN ARRAY['Problem with `first_name`'] ELSE ARRAY[]::text[] END
+        ||
+        CASE WHEN (_airbyte_data ->> 'age' IS NOT NULL) AND (_airbyte_safe_cast_to_integer(_airbyte_data ->> 'age') IS NULL) THEN ARRAY['Problem with `age`'] ELSE ARRAY[]::text[] END
+        ||
+        CASE WHEN (_airbyte_data ->> 'updated_at' IS NOT NULL) AND (_airbyte_safe_cast_to_timestamp(_airbyte_data ->> 'updated_at') IS NULL) THEN ARRAY['Problem with `updated_at`'] ELSE ARRAY[]::text[] END
+        ||
+        CASE WHEN (_airbyte_data ->> 'address' IS NOT NULL) AND (_airbyte_safe_cast_to_json(_airbyte_data ->> 'address') IS NULL) THEN ARRAY['Problem with `address`'] ELSE ARRAY[]::text[] END
+      ) as _airbyte_cast_errors
+      , _airbyte_raw_id
+      , _airbyte_extracted_at
+    FROM z_airbyte.users_raw
+    WHERE
+      _airbyte_loaded_at IS NULL -- inserting only new/null values, we can recover from failed previous checkpoints
+      AND _airbyte_data ->> '_ab_cdc_deleted_at' IS NULL -- Skip CDC deleted rows (old records are already cleared away above
+  )
 
-	-- Step 3: Dedupe and clean the typed table
-	-- This is a full table scan, but we need to do it this way to merge the new rows with the old to:
-	--   * Consider the case in which there are multiple entries for the same PK in the new insert batch
-	--	 * Consider the case in which the data in the new batch is older than the data in the typed table, and we only want to keep the newer (pre-existing) data
-	--   * Order by the source's provided cursor and _airbyte_extracted_at to break any ties
+  INSERT INTO public.users
+  (
+    id,
+    first_name,
+    age,
+    updated_at,
+    address,
+    _airbyte_meta,
+    _airbyte_raw_id,
+    _airbyte_extracted_at
+  )
+  SELECT
+      id,
+      first_name,
+      age,
+      updated_at,
+      address,
+      CASE
+        WHEN array_length(_airbyte_cast_errors, 1) = 0 THEN '{"errors": []}'::JSON
+        ELSE json_build_object('errors', _airbyte_cast_errors)
+      END AS _airbyte_meta,
+      _airbyte_raw_id,
+      _airbyte_extracted_at
+    FROM intermediate_data
+    ;
 
-	WITH cte AS (
-		SELECT _airbyte_raw_id, row_number() OVER (
-			PARTITION BY id ORDER BY updated_at DESC, _airbyte_extracted_at DESC
-		) as row_number FROM public.users
-	)
+  -- Step 3: Dedupe and clean the typed table
+  -- This is a full table scan, but we need to do it this way to merge the new rows with the old to:
+  --   * Consider the case in which there are multiple entries for the same PK in the new insert batch
+  --	 * Consider the case in which the data in the new batch is older than the data in the typed table, and we only want to keep the newer (pre-existing) data
+  --   * Order by the source's provided cursor and _airbyte_extracted_at to break any ties
 
-	DELETE FROM public.users
-	WHERE
-		-- Delete any rows which are not the most recent for a given PK
-		_airbyte_raw_id IN (
-			SELECT _airbyte_raw_id FROM cte WHERE row_number != 1
-		)
-		OR
-		-- Delete rows that have been CDC deleted
-		id IN (
-			SELECT
-				_airbyte_safe_cast_to_integer(_airbyte_data ->> 'id') as id -- based on the PK which we know from the connector catalog
-			FROM z_airbyte.users_raw
-			WHERE _airbyte_data ->> '_ab_cdc_deleted_at' IS NOT NULL
-		)
-	;
+  WITH cte AS (
+    SELECT _airbyte_raw_id, row_number() OVER (
+      PARTITION BY id ORDER BY updated_at DESC, _airbyte_extracted_at DESC
+    ) as row_number FROM public.users
+  )
 
-	-- Step 4: Remove old entries from Raw table
-	DELETE FROM
-		z_airbyte.users_raw
-	WHERE
-		_airbyte_raw_id NOT IN (
-			SELECT _airbyte_raw_id FROM public.users
-		)
-		AND
-		_airbyte_data ->> '_ab_cdc_deleted_at' IS NULL -- we want to keep the final _ab_cdc_deleted_at=true entry in the raw table for the deleted record
-	;
+  DELETE FROM public.users
+  WHERE
+    -- Delete any rows which are not the most recent for a given PK
+    _airbyte_raw_id IN (
+      SELECT _airbyte_raw_id FROM cte WHERE row_number != 1
+    )
+    OR
+    -- Delete rows that have been CDC deleted
+    id IN (
+      SELECT
+        _airbyte_safe_cast_to_integer(_airbyte_data ->> 'id') as id -- based on the PK which we know from the connector catalog
+      FROM z_airbyte.users_raw
+      WHERE _airbyte_data ->> '_ab_cdc_deleted_at' IS NOT NULL
+    )
+  ;
 
-	-- Step 5: Apply typed_at timestamp where needed
-	UPDATE z_airbyte.users_raw
-	SET _airbyte_loaded_at = NOW()
-	WHERE _airbyte_loaded_at IS NULL
-	;
+  -- Step 4: Remove old entries from Raw table
+  DELETE FROM
+    z_airbyte.users_raw
+  WHERE
+    _airbyte_raw_id NOT IN (
+      SELECT _airbyte_raw_id FROM public.users
+    )
+    AND
+    _airbyte_data ->> '_ab_cdc_deleted_at' IS NULL -- we want to keep the final _ab_cdc_deleted_at=true entry in the raw table for the deleted record
+  ;
+
+  -- Step 5: Apply typed_at timestamp where needed
+  UPDATE z_airbyte.users_raw
+  SET _airbyte_loaded_at = NOW()
+  WHERE _airbyte_loaded_at IS NULL
+  ;
 
 
-	RETURN 'SUCCESS';
+  RETURN 'SUCCESS';
 END;
 $$ LANGUAGE plpgsql;
 
