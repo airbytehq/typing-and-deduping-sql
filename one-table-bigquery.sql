@@ -96,26 +96,56 @@ BEGIN
 
     -- Step 2: Move the new data to the typed table
     INSERT INTO testing_evan_2052.users
+    WITH intermediate_data AS (
+      SELECT
+        SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.id') as INT64) as id,
+        SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.first_name') as STRING) as first_name,
+        SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.age') as INT64) as age,
+        JSON_QUERY(`_airbyte_data`, '$.address') as address, -- NOTE: For record properties remaining as JSON, you `JSON_QUERY`, not `JSON_VALUE`
+        SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.updated_at') as TIMESTAMP) as updated_at,
+        array_concat(
+          CASE
+            WHEN (JSON_VALUE(`_airbyte_data`, '$.id') IS NOT NULL) AND (SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.id') as INT64) IS NULL) THEN ["Problem with `id`"]
+            ELSE []
+          END,
+          CASE
+            WHEN (JSON_VALUE(`_airbyte_data`, '$.first_name') IS NOT NULL) AND (SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.first_name') as STRING) IS NULL) THEN ["Problem with `first_name`"]
+            ELSE []
+          END,
+          CASE
+            WHEN (JSON_VALUE(`_airbyte_data`, '$.age') IS NOT NULL) AND (SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.age') as INT64) IS NULL) THEN ["Problem with `age`"]
+            ELSE []
+          END,
+          CASE
+            WHEN (JSON_VALUE(`_airbyte_data`, '$.updated_at') IS NOT NULL) AND (SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.updated_at') as TIMESTAMP) IS NULL) THEN ["Problem with `updated_at`"]
+            ELSE []
+          END,
+          -- TODO This should probably actually check if JSON_QUERY returned an object. Right now it's checking IS NOT NULL AND IS NULL, i.e always false.
+          CASE
+            WHEN (JSON_VALUE(`_airbyte_data`, '$.address') IS NOT NULL) AND (JSON_QUERY(`_airbyte_data`, '$.address') IS NULL) THEN ["Problem with `address`"]
+            ELSE []
+          END
+        ) _airbyte_cast_errors,
+        _airbyte_raw_id,
+        _airbyte_extracted_at
+      FROM testing_evan_2052.users_raw
+      WHERE
+        _airbyte_loaded_at IS NULL -- inserting only new/null values, we can recover from failed previous checkpoints
+        AND JSON_EXTRACT(`_airbyte_data`, '$._ab_cdc_deleted_at') IS NULL -- Skip CDC deleted rows (old records are already cleared away above
+    )
     SELECT
-      SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.id') as INT64) as id,
-      SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.first_name') as STRING) as first_name,
-      SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.age') as INT64) as age,
-      SAFE_CAST(JSON_QUERY(`_airbyte_data`, '$.address') as JSON) as address, -- NOTE: For record properties remaining as JSON, you `JSON_QUERY`, not `JSON_VALUE`
-      SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.updated_at') as TIMESTAMP) as updated_at,
+      `id`,
+      `first_name`,
+      `age`,
+      `updated_at`,
+      `address`,
       CASE
-        WHEN (JSON_VALUE(`_airbyte_data`, '$.id') IS NOT NULL) AND (SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.id') as INT64) IS NULL) THEN JSON'{"error": "Problem with `id`"}'
-        WHEN (JSON_VALUE(`_airbyte_data`, '$.first_name') IS NOT NULL) AND (SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.first_name') as STRING) IS NULL) THEN JSON'{"error": "Problem with `first_name`"}'
-        WHEN (JSON_VALUE(`_airbyte_data`, '$.age') IS NOT NULL) AND (SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.age') as INT64) IS NULL) THEN JSON'{"error": "Problem with `age`"}'
-        WHEN (JSON_VALUE(`_airbyte_data`, '$.updated_at') IS NOT NULL) AND (SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.updated_at') as TIMESTAMP) IS NULL) THEN JSON'{"error": "Problem with `updated_at`"}'
-        WHEN (JSON_QUERY(`_airbyte_data`, '$.address') IS NOT NULL) AND (SAFE_CAST(JSON_QUERY(`_airbyte_data`, '$.address') as JSON) IS NULL) THEN JSON'{"error": "Problem with `address`"}'
-        ELSE JSON'{}'
-      END as _airbyte_meta,
+        WHEN array_length(_airbyte_cast_errors) = 0 THEN JSON'{}'
+        ELSE to_json(struct(_airbyte_cast_errors AS errors))
+      END AS _airbyte_meta,
       _airbyte_raw_id,
       _airbyte_extracted_at
-    FROM testing_evan_2052.users_raw
-    WHERE
-      _airbyte_loaded_at IS NULL -- inserting only new/null values, we can recover from failed previous checkpoints
-      AND JSON_EXTRACT(`_airbyte_data`, '$._ab_cdc_deleted_at') IS NULL -- Skip CDC deleted rows (old records are already cleared away above
+    FROM intermediate_data
     ;
 
     -- Step 3: Dedupe and clean the typed table
