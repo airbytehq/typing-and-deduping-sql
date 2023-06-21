@@ -185,7 +185,7 @@ BEGIN
         FROM testing_evan_2052.users_raw
         WHERE JSON_VALUE(`_airbyte_data`, '$._ab_cdc_deleted_at') IS NOT NULL
           -- Only delete from the final table if the raw deletion record has a newer cursor than the final table record
-          AND `_ab_cdc_lsn` < SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$._ab_cdc_lsn') as INT64)
+          AND `updated_at` < SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.updated_at') as INT64)
       )
     ;
 

@@ -248,7 +248,7 @@ BEGIN
       FROM z_airbyte.users_raw
       WHERE _airbyte_data ->> '_ab_cdc_deleted_at' IS NOT NULL
         -- Only delete from the final table if the raw deletion record has a newer cursor than the final table record
-        AND `_ab_cdc_lsn` < _airbyte_safe_cast_to_integer(_airbyte_data ->> '_ab_cdc_lsn')
+        AND `updated_at` < _airbyte_safe_cast_to_integer(_airbyte_data ->> 'updated_at')
     )
   ;
 
