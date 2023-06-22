@@ -110,28 +110,67 @@ BEGIN
         SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.id') as INT64) as id,
         SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.first_name') as STRING) as first_name,
         SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.age') as INT64) as age,
-        JSON_QUERY(`_airbyte_data`, '$.address') as address, -- NOTE: For record properties remaining as JSON, you `JSON_QUERY`, not `JSON_VALUE`
+        CASE
+          -- If the json value is not an object, return null. This also includes {"address": null}. Maybe we should return JSON'null' in that case?
+          WHEN JSON_QUERY(`_airbyte_data`, '$.address') IS NULL
+            OR JSON_TYPE(JSON_QUERY(`_airbyte_data`, '$.address')) != 'object'
+            THEN NULL
+          ELSE JSON_QUERY(`_airbyte_data`, '$.address')
+        END as `address`, -- NOTE: For record properties remaining as JSON, you `JSON_QUERY`, not `JSON_VALUE`
         SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.updated_at') as TIMESTAMP) as updated_at,
         array_concat(
           CASE
-            WHEN (JSON_VALUE(`_airbyte_data`, '$.id') IS NOT NULL) AND (SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.id') as INT64) IS NULL) THEN ["Problem with `id`"]
+            -- JSON_VALUE(JSON'{"id": {...}', '$.id') returns NULL, which is obviously wrong.
+            -- so we use JSON_QUERY instead to check whether there should be a value here.
+            WHEN (JSON_QUERY(`_airbyte_data`, '$.id') IS NOT NULL)
+              AND (JSON_TYPE(JSON_QUERY(`_airbyte_data`, '$.id') != 'null'))
+              -- But we do need JSON_VALUE here to get a SQL value rather than JSON.
+              AND (SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.id') as INT64) IS NULL)
+              THEN ["Problem with `id`"]
             ELSE []
           END,
           CASE
-            WHEN (JSON_VALUE(`_airbyte_data`, '$.first_name') IS NOT NULL) AND (SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.first_name') as STRING) IS NULL) THEN ["Problem with `first_name`"]
+            WHEN (JSON_QUERY(`_airbyte_data`, '$.first_name') IS NOT NULL)
+              AND (JSON_TYPE(JSON_QUERY(`_airbyte_data`, '$.first_name') != 'null'))
+              AND (SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.first_name') as STRING) IS NULL)
+              THEN ["Problem with `first_name`"]
             ELSE []
           END,
           CASE
-            WHEN (JSON_VALUE(`_airbyte_data`, '$.age') IS NOT NULL) AND (SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.age') as INT64) IS NULL) THEN ["Problem with `age`"]
+            WHEN (JSON_QUERY(`_airbyte_data`, '$.age') IS NOT NULL)
+              AND (JSON_TYPE(JSON_QUERY(`_airbyte_data`, '$.age') != 'null'))
+              AND (SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.age') as INT64) IS NULL)
+              THEN ["Problem with `age`"]
             ELSE []
           END,
           CASE
-            WHEN (JSON_VALUE(`_airbyte_data`, '$.updated_at') IS NOT NULL) AND (SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.updated_at') as TIMESTAMP) IS NULL) THEN ["Problem with `updated_at`"]
+            WHEN (JSON_QUERY(`_airbyte_data`, '$.updated_at') IS NOT NULL)
+              AND (JSON_TYPE(JSON_QUERY(`_airbyte_data`, '$.updated_at') != 'null'))
+              AND (SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.updated_at') as TIMESTAMP) IS NULL)
+              THEN ["Problem with `updated_at`"]
             ELSE []
           END,
-          -- TODO This should probably actually check if JSON_QUERY returned an object. Right now it's checking IS NOT NULL AND IS NULL, i.e always false.
+          -- The nested CASE statement is identical to the one above that extracts `address` from `_airbyte_data`
+          -- This means we're doing repeated work, e.g. checking the json type.
+          -- We could probably do this a bit more smartly, but this format is easier to codegen. (and maybe bigquery is smart enough to optimize it anyway?)
+          -- E.g. this is equivalent:
+          -- CASE
+          --   WHEN (JSON_QUERY(`_airbyte_data`, '$.address') IS NOT NULL)
+          --     AND (JSON_TYPE(JSON_QUERY(`_airbyte_data`, '$.address')) NOT IN ('null', 'object'))
+          --     THEN ["Problem with `address`"]
+          --   ELSE []
+          -- END,
           CASE
-            WHEN (JSON_VALUE(`_airbyte_data`, '$.address') IS NOT NULL) AND (JSON_QUERY(`_airbyte_data`, '$.address') IS NULL) THEN ["Problem with `address`"]
+            WHEN (JSON_VALUE(`_airbyte_data`, '$.address') IS NOT NULL)
+              AND (JSON_TYPE(JSON_VALUE(`_airbyte_data`, '$.address') != 'null'))
+              AND (CASE
+                  WHEN JSON_QUERY(`_airbyte_data`, '$.address') IS NULL
+                    OR JSON_TYPE(JSON_QUERY(`_airbyte_data`, '$.address')) != 'object'
+                    THEN NULL
+                  ELSE JSON_QUERY(`_airbyte_data`, '$.address')
+                END
+                IS NULL)
+              THEN ["Problem with `address`"]
             ELSE []
           END
         ) _airbyte_cast_errors,
