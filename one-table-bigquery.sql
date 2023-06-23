@@ -179,8 +179,13 @@ BEGIN
         _airbyte_extracted_at
       FROM testing_evan_2052.users_raw
       WHERE
-        _airbyte_loaded_at IS NULL -- inserting only new/null values, we can recover from failed previous checkpoints
-        AND JSON_EXTRACT(`_airbyte_data`, '$._ab_cdc_deleted_at') IS NULL -- Skip CDC deleted rows (old records are already cleared away above
+        -- inserting only new/null values, we can recover from failed previous checkpoints
+        _airbyte_loaded_at IS NULL
+         -- Skip CDC deleted rows (old records are already cleared away above)
+        AND (
+          JSON_QUERY(`_airbyte_data`, '$._ab_cdc_deleted_at') IS NULL
+          OR JSON_TYPE(JSON_QUERY(`_airbyte_data`, '$._ab_cdc_deleted_at')) = 'null'
+        )
     )
 
     SELECT
@@ -223,7 +228,8 @@ BEGIN
         SELECT
           SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.id') as INT64) as id -- based on the PK which we know from the connector catalog
         FROM testing_evan_2052.users_raw
-        WHERE JSON_VALUE(`_airbyte_data`, '$._ab_cdc_deleted_at') IS NOT NULL
+        WHERE JSON_QUERY(`_airbyte_data`, '$._ab_cdc_deleted_at') IS NOT NULL
+          AND JSON_TYPE(JSON_QUERY(`_airbyte_data`, '$._ab_cdc_deleted_at')) != 'null'
       )
     ;
 
@@ -234,8 +240,11 @@ BEGIN
       `_airbyte_raw_id` NOT IN (
         SELECT `_airbyte_raw_id` FROM testing_evan_2052.users
       )
-      AND
-      JSON_VALUE(`_airbyte_data`, '$._ab_cdc_deleted_at') IS NULL -- we want to keep the final _ab_cdc_deleted_at=true entry in the raw table for the deleted record
+      -- we want to keep the final _ab_cdc_deleted_at=true entry in the raw table for the deleted record
+      AND (
+        JSON_QUERY(`_airbyte_data`, '$._ab_cdc_deleted_at') IS NULL
+        OR JSON_TYPE(JSON_QUERY(`_airbyte_data`, '$._ab_cdc_deleted_at')) = 'null'
+      )
     ;
 
     -- Step 5: Apply typed_at timestamp where needed
