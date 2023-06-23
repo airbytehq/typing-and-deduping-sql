@@ -110,28 +110,68 @@ BEGIN
         SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.id') as INT64) as id,
         SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.first_name') as STRING) as first_name,
         SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.age') as INT64) as age,
-        JSON_QUERY(`_airbyte_data`, '$.address') as address, -- NOTE: For record properties remaining as JSON, you `JSON_QUERY`, not `JSON_VALUE`
+        CASE
+          -- If the json value is not an object, return null. This also includes {"address": null}. Maybe we should return JSON'null' in that case?
+          WHEN JSON_QUERY(`_airbyte_data`, '$.address') IS NULL
+            OR JSON_TYPE(JSON_QUERY(`_airbyte_data`, '$.address')) != 'object'
+            THEN NULL
+          ELSE JSON_QUERY(`_airbyte_data`, '$.address')
+        END as `address`, -- NOTE: For record properties remaining as JSON, you `JSON_QUERY`, not `JSON_VALUE`
         SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.updated_at') as TIMESTAMP) as updated_at,
         array_concat(
           CASE
-            WHEN (JSON_VALUE(`_airbyte_data`, '$.id') IS NOT NULL) AND (SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.id') as INT64) IS NULL) THEN ["Problem with `id`"]
+            -- JSON_VALUE(JSON'{"id": {...}}', '$.id') returns NULL.
+            -- so we use JSON_QUERY instead to check whether there should be a value here.
+            -- If we used json_value, then we would falsely believe that id is unset, and therefore would not populate an error into airbyte_meta.
+            WHEN (JSON_QUERY(`_airbyte_data`, '$.id') IS NOT NULL)
+              AND (JSON_TYPE(JSON_QUERY(`_airbyte_data`, '$.id') != 'null'))
+              -- But we do need JSON_VALUE here to get a SQL value rather than JSON.
+              AND (SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.id') as INT64) IS NULL)
+              THEN ["Problem with `id`"]
             ELSE []
           END,
           CASE
-            WHEN (JSON_VALUE(`_airbyte_data`, '$.first_name') IS NOT NULL) AND (SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.first_name') as STRING) IS NULL) THEN ["Problem with `first_name`"]
+            WHEN (JSON_QUERY(`_airbyte_data`, '$.first_name') IS NOT NULL)
+              AND (JSON_TYPE(JSON_QUERY(`_airbyte_data`, '$.first_name') != 'null'))
+              AND (SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.first_name') as STRING) IS NULL)
+              THEN ["Problem with `first_name`"]
             ELSE []
           END,
           CASE
-            WHEN (JSON_VALUE(`_airbyte_data`, '$.age') IS NOT NULL) AND (SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.age') as INT64) IS NULL) THEN ["Problem with `age`"]
+            WHEN (JSON_QUERY(`_airbyte_data`, '$.age') IS NOT NULL)
+              AND (JSON_TYPE(JSON_QUERY(`_airbyte_data`, '$.age') != 'null'))
+              AND (SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.age') as INT64) IS NULL)
+              THEN ["Problem with `age`"]
             ELSE []
           END,
           CASE
-            WHEN (JSON_VALUE(`_airbyte_data`, '$.updated_at') IS NOT NULL) AND (SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.updated_at') as TIMESTAMP) IS NULL) THEN ["Problem with `updated_at`"]
+            WHEN (JSON_QUERY(`_airbyte_data`, '$.updated_at') IS NOT NULL)
+              AND (JSON_TYPE(JSON_QUERY(`_airbyte_data`, '$.updated_at') != 'null'))
+              AND (SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.updated_at') as TIMESTAMP) IS NULL)
+              THEN ["Problem with `updated_at`"]
             ELSE []
           END,
-          -- TODO This should probably actually check if JSON_QUERY returned an object. Right now it's checking IS NOT NULL AND IS NULL, i.e always false.
+          -- The nested CASE statement is identical to the one above that extracts `address` from `_airbyte_data`
+          -- This means we're doing repeated work, e.g. checking the json type.
+          -- We could probably do this a bit more smartly, but this format is easier to codegen. (and maybe bigquery is smart enough to optimize it anyway?)
+          -- E.g. this is equivalent:
+          -- CASE
+          --   WHEN (JSON_QUERY(`_airbyte_data`, '$.address') IS NOT NULL)
+          --     AND (JSON_TYPE(JSON_QUERY(`_airbyte_data`, '$.address')) NOT IN ('null', 'object'))
+          --     THEN ["Problem with `address`"]
+          --   ELSE []
+          -- END,
           CASE
-            WHEN (JSON_VALUE(`_airbyte_data`, '$.address') IS NOT NULL) AND (JSON_QUERY(`_airbyte_data`, '$.address') IS NULL) THEN ["Problem with `address`"]
+            WHEN (JSON_VALUE(`_airbyte_data`, '$.address') IS NOT NULL)
+              AND (JSON_TYPE(JSON_VALUE(`_airbyte_data`, '$.address') != 'null'))
+              AND (CASE
+                  WHEN JSON_QUERY(`_airbyte_data`, '$.address') IS NULL
+                    OR JSON_TYPE(JSON_QUERY(`_airbyte_data`, '$.address')) != 'object'
+                    THEN NULL
+                  ELSE JSON_QUERY(`_airbyte_data`, '$.address')
+                END
+                IS NULL)
+              THEN ["Problem with `address`"]
             ELSE []
           END
         ) _airbyte_cast_errors,
@@ -139,8 +179,13 @@ BEGIN
         _airbyte_extracted_at
       FROM testing_evan_2052.users_raw
       WHERE
-        _airbyte_loaded_at IS NULL -- inserting only new/null values, we can recover from failed previous checkpoints
-        AND JSON_EXTRACT(`_airbyte_data`, '$._ab_cdc_deleted_at') IS NULL -- Skip CDC deleted rows (old records are already cleared away above
+        -- inserting only new/null values, we can recover from failed previous checkpoints
+        _airbyte_loaded_at IS NULL
+         -- Skip CDC deleted rows (old records are already cleared away above)
+        AND (
+          JSON_QUERY(`_airbyte_data`, '$._ab_cdc_deleted_at') IS NULL
+          OR JSON_TYPE(JSON_QUERY(`_airbyte_data`, '$._ab_cdc_deleted_at')) = 'null'
+        )
     )
 
     SELECT
@@ -183,7 +228,8 @@ BEGIN
         SELECT
           SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.id') as INT64) as id -- based on the PK which we know from the connector catalog
         FROM testing_evan_2052.users_raw
-        WHERE JSON_VALUE(`_airbyte_data`, '$._ab_cdc_deleted_at') IS NOT NULL
+        WHERE JSON_QUERY(`_airbyte_data`, '$._ab_cdc_deleted_at') IS NOT NULL
+          AND JSON_TYPE(JSON_QUERY(`_airbyte_data`, '$._ab_cdc_deleted_at')) != 'null'
       )
     ;
 
@@ -194,8 +240,11 @@ BEGIN
       `_airbyte_raw_id` NOT IN (
         SELECT `_airbyte_raw_id` FROM testing_evan_2052.users
       )
-      AND
-      JSON_VALUE(`_airbyte_data`, '$._ab_cdc_deleted_at') IS NULL -- we want to keep the final _ab_cdc_deleted_at=true entry in the raw table for the deleted record
+      -- we want to keep the final _ab_cdc_deleted_at=true entry in the raw table for the deleted record
+      AND (
+        JSON_QUERY(`_airbyte_data`, '$._ab_cdc_deleted_at') IS NULL
+        OR JSON_TYPE(JSON_QUERY(`_airbyte_data`, '$._ab_cdc_deleted_at')) = 'null'
+      )
     ;
 
     -- Step 5: Apply typed_at timestamp where needed
