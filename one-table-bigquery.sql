@@ -120,8 +120,9 @@ BEGIN
         SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.updated_at') as TIMESTAMP) as updated_at,
         array_concat(
           CASE
-            -- JSON_VALUE(JSON'{"id": {...}', '$.id') returns NULL, which is obviously wrong.
+            -- JSON_VALUE(JSON'{"id": {...}}', '$.id') returns NULL.
             -- so we use JSON_QUERY instead to check whether there should be a value here.
+            -- If we used json_value, then we would falsely believe that id is unset, and therefore would not populate an error into airbyte_meta.
             WHEN (JSON_QUERY(`_airbyte_data`, '$.id') IS NOT NULL)
               AND (JSON_TYPE(JSON_QUERY(`_airbyte_data`, '$.id') != 'null'))
               -- But we do need JSON_VALUE here to get a SQL value rather than JSON.
