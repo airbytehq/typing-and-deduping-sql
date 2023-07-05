@@ -145,16 +145,20 @@ BEGIN
       )
       WHERE row_number != 1
     )
-    OR
-    -- Delete rows that have been CDC deleted
-    "id" IN (
-      SELECT
-        TRY_CAST("_airbyte_data":"id"::text AS INT) as id -- based on the PK which we know from the connector catalog
-      FROM Z_AIRBYTE.USERS_RAW
-      WHERE "_airbyte_data":"_ab_cdc_deleted_at" IS NOT NULL
-    )
-  ;
+    ;
 
+  DELETE FROM PUBLIC.USERS
+  WHERE
+  -- Delete rows that have been CDC deleted
+  "id" IN (
+    SELECT
+      TRY_CAST("_airbyte_data":"id"::text AS INT) as id -- based on the PK which we know from the connector catalog
+    FROM Z_AIRBYTE.USERS_RAW
+    WHERE "_airbyte_data":"_ab_cdc_deleted_at" IS NOT NULL
+      -- Only delete from the final table if the raw deletion record has a newer cursor than the final table record
+      AND `updated_at` < TRY_CAST("_airbyte_data":"updated_at"::text AS TIMESTAMP)
+  )
+  ;
   -- Step 4: Remove old entries from Raw table
   DELETE FROM Z_AIRBYTE.USERS_RAW
   WHERE

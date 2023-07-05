@@ -240,7 +240,10 @@ BEGIN
     _airbyte_raw_id IN (
       SELECT _airbyte_raw_id FROM cte WHERE row_number != 1
     )
-    OR
+  ;
+
+  DELETE FROM public.users
+  WHERE
     -- Delete rows that have been CDC deleted
     id IN (
       SELECT
@@ -248,7 +251,7 @@ BEGIN
       FROM z_airbyte.users_raw
       WHERE _airbyte_data ->> '_ab_cdc_deleted_at' IS NOT NULL
         -- Only delete from the final table if the raw deletion record has a newer cursor than the final table record
-        AND `updated_at` < _airbyte_safe_cast_to_integer(_airbyte_data ->> 'updated_at')
+        AND `updated_at` < _airbyte_safe_cast_to_timestamp(_airbyte_data ->> 'updated_at')
     )
   ;
 
