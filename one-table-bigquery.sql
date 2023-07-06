@@ -140,7 +140,6 @@ BEGIN
       FROM testing_evan_2052.users_raw
       WHERE
         _airbyte_loaded_at IS NULL -- inserting only new/null values, we can recover from failed previous checkpoints
-        AND JSON_EXTRACT(`_airbyte_data`, '$._ab_cdc_deleted_at') IS NULL -- Skip CDC deleted rows (old records are already cleared away above
     )
 
     SELECT
@@ -179,6 +178,16 @@ BEGIN
       )
     ;
 
+    -- Step 4: Remove old entries from Raw table
+    DELETE FROM
+      testing_evan_2052.users_raw
+    WHERE
+      `_airbyte_raw_id` NOT IN (
+        SELECT `_airbyte_raw_id` FROM testing_evan_2052.users
+      )
+    ;
+
+    -- Step 5: Clean out CDC deletes from final table
     DELETE FROM testing_evan_2052.users
     WHERE
     -- Delete rows that have been CDC deleted
@@ -187,23 +196,10 @@ BEGIN
         SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.id') as INT64) as id -- based on the PK which we know from the connector catalog
       FROM testing_evan_2052.users_raw
       WHERE JSON_VALUE(`_airbyte_data`, '$._ab_cdc_deleted_at') IS NOT NULL
-        -- Only delete from the final table if the raw deletion record has a newer cursor than the final table record
-        AND `updated_at` < SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.updated_at') as TIMESTAMP)
       )
     ;
 
-    -- Step 4: Remove old entries from Raw table
-    DELETE FROM
-      testing_evan_2052.users_raw
-    WHERE
-      `_airbyte_raw_id` NOT IN (
-        SELECT `_airbyte_raw_id` FROM testing_evan_2052.users
-      )
-      AND
-      JSON_VALUE(`_airbyte_data`, '$._ab_cdc_deleted_at') IS NULL -- we want to keep the final _ab_cdc_deleted_at=true entry in the raw table for the deleted record
-    ;
-
-    -- Step 5: Apply typed_at timestamp where needed
+    -- Step 6: Apply typed_at timestamp where needed
     UPDATE testing_evan_2052.users_raw
     SET `_airbyte_loaded_at` = CURRENT_TIMESTAMP()
     WHERE `_airbyte_loaded_at` IS NULL

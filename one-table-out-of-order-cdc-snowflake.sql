@@ -113,7 +113,6 @@ BEGIN
           Z_AIRBYTE.USERS_RAW
       WHERE
         "_airbyte_loaded_at" IS NULL -- inserting only new/null values, we can recover from failed previous checkpoints
-        AND "_airbyte_data":"_ab_cdc_deleted_at" IS NULL -- Skip CDC deleted rows (old records are already cleared away above
     )
 
     SELECT
@@ -149,6 +148,15 @@ BEGIN
     )
     ;
 
+    -- Step 4: Remove old entries from Raw table
+  DELETE FROM Z_AIRBYTE.USERS_RAW
+  WHERE
+    "_airbyte_raw_id" NOT IN (
+      SELECT "_airbyte_raw_id" FROM PUBLIC.USERS
+    )
+  ;
+
+  -- Step 5: Clean out CDC deletes from final table
   DELETE FROM PUBLIC.USERS
   WHERE
   -- Delete rows that have been CDC deleted
@@ -157,22 +165,10 @@ BEGIN
       TRY_CAST("_airbyte_data":"id"::text AS INT) as id -- based on the PK which we know from the connector catalog
     FROM Z_AIRBYTE.USERS_RAW
     WHERE "_airbyte_data":"_ab_cdc_deleted_at" IS NOT NULL
-      -- Only delete from the final table if the raw deletion record has a newer cursor than the final table record
-      AND `updated_at` < TRY_CAST("_airbyte_data":"updated_at"::text AS TIMESTAMP)
   )
   ;
 
-  -- Step 4: Remove old entries from Raw table
-  DELETE FROM Z_AIRBYTE.USERS_RAW
-  WHERE
-    "_airbyte_raw_id" NOT IN (
-      SELECT "_airbyte_raw_id" FROM PUBLIC.USERS
-    )
-    AND
-    "_airbyte_data":"_ab_cdc_deleted_at" IS NULL -- we want to keep the final _ab_cdc_deleted_at=true entry in the raw table for the deleted record
-  ;
-
-  -- Step 5: Apply typed_at timestamp where needed
+  -- Step 6: Apply typed_at timestamp where needed
   UPDATE Z_AIRBYTE.USERS_RAW
   SET "_airbyte_loaded_at" = CURRENT_TIMESTAMP()
   WHERE "_airbyte_loaded_at" IS NULL
