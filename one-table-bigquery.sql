@@ -188,6 +188,13 @@ BEGIN
     ;
 
     -- Step 5: Clean out CDC deletes from final table
+    -- Only run this step if _ab_cdc_deleted_at is a property of the stream
+    /*
+    DELETE FROM testing_evan_2052.users
+    WHERE _ab_cdc_deleted_at IS NOT NULL
+    */
+
+    -- the following will always work, even if there is no _ab_cdc_deleted_at column, but it is slower
     DELETE FROM testing_evan_2052.users
     WHERE
     -- Delete rows that have been CDC deleted
