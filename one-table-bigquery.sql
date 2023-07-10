@@ -140,6 +140,11 @@ BEGIN
       FROM testing_evan_2052.users_raw
       WHERE
         _airbyte_loaded_at IS NULL -- inserting only new/null values, we can recover from failed previous checkpoints
+        OR (
+          -- Temporarily place back an entry for any CDC-deleted record so we can order them properly by cursor.  We only need the PK and cursor value
+          _airbyte_loaded_at IS NOT NULL
+          AND JSON_VALUE(`_airbyte_data`, '$._ab_cdc_deleted_at') IS NOT NULL
+        )
     )
 
     SELECT
@@ -202,8 +207,9 @@ BEGIN
       SELECT
         SAFE_CAST(JSON_VALUE(`_airbyte_data`, '$.id') as INT64) as id -- based on the PK which we know from the connector catalog
       FROM testing_evan_2052.users_raw
-      WHERE JSON_VALUE(`_airbyte_data`, '$._ab_cdc_deleted_at') IS NOT NULL
-      )
+      WHERE
+        JSON_VALUE(`_airbyte_data`, '$._ab_cdc_deleted_at') IS NOT NULL
+    )
     ;
 
     -- Step 6: Apply typed_at timestamp where needed
