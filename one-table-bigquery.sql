@@ -143,10 +143,7 @@ BEGIN
         OR (
           -- Temporarily place back an entry for any CDC-deleted record so we can order them properly by cursor.  We only need the PK and cursor value
           _airbyte_loaded_at IS NOT NULL
-          AND (
-            JSON_VALUE(`_airbyte_data`, '$._ab_cdc_deleted_at') IS NOT NULL
-            OR JSON_TYPE(JSON_QUERY(`_airbyte_data`, '$._ab_cdc_deleted_at')) = 'null'
-          )
+          AND JSON_VALUE(`_airbyte_data`, '$._ab_cdc_deleted_at') IS NOT NULL
         )
     )
 
@@ -212,7 +209,6 @@ BEGIN
       FROM testing_evan_2052.users_raw
       WHERE
         JSON_VALUE(`_airbyte_data`, '$._ab_cdc_deleted_at') IS NOT NULL
-        OR JSON_TYPE(JSON_QUERY(`_airbyte_data`, '$._ab_cdc_deleted_at')) = 'null'
     )
     ;
 
