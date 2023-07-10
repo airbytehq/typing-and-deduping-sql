@@ -118,6 +118,14 @@ BEGIN
           Z_AIRBYTE.USERS_RAW
       WHERE
         "_airbyte_loaded_at" IS NULL -- inserting only new/null values, we can recover from failed previous checkpoints
+        OR (
+          -- Temporarily place back an entry for any CDC-deleted record so we can order them properly by cursor.  We only need the PK and cursor value
+          "_airbyte_loaded_at" IS NOT NULL
+          AND (
+            "_airbyte_data":"_ab_cdc_deleted_at" IS NOT NULL
+            OR "_airbyte_data":"_ab_cdc_deleted_at" = 'null'
+          )
+        )
     )
 
     SELECT
@@ -177,6 +185,7 @@ BEGIN
       TRY_CAST("_airbyte_data":"id"::text AS INT) as id -- based on the PK which we know from the connector catalog
     FROM Z_AIRBYTE.USERS_RAW
     WHERE "_airbyte_data":"_ab_cdc_deleted_at" IS NOT NULL
+      OR "_airbyte_data":"_ab_cdc_deleted_at" = 'null'
   )
   ;
 

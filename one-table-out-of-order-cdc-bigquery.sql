@@ -24,32 +24,38 @@ KNOWN LIMITATIONS
 -- Set up the Experiment
 -- Assumption: We can build the table at the start of the sync based only on the schema we get from the source/configured catalog
 
-DROP TABLE IF EXISTS testing_evan_2052.users;
-DROP TABLE IF EXISTS testing_evan_2052.users_raw;
 
-CREATE TABLE testing_evan_2052.users (
-    `id` INT64 OPTIONS (description = 'PK cannot be null, but after raw insert and before typing, row will be temporarily null')
-  , `first_name` STRING
-  , `age` INT64
-  , `address` JSON
-  , `updated_at` TIMESTAMP
-  , `_airbyte_meta` JSON NOT NULL OPTIONS (description = 'Airbyte column, cannot be null')
-  , `_airbyte_raw_id` STRING NOT NULL OPTIONS (description = 'Airbyte column, cannot be null')
-  , `_airbyte_extracted_at` TIMESTAMP NOT NULL OPTIONS (description = 'Airbyte column, cannot be null')
-)
-PARTITION BY (
-  DATE_TRUNC(_airbyte_extracted_at, DAY)
-  -- TODO: Learn about partition_expiration_days https://cloud.google.com/bigquery/docs/creating-partitioned-tables
-) CLUSTER BY
-  id, _airbyte_extracted_at
-OPTIONS (
-  description="users table"
-)
-;
 
 -------------------------------------
 --------- TYPE AND DEDUPE -----------
 -------------------------------------
+
+CREATE OR REPLACE PROCEDURE testing_evan_2052.reset()
+BEGIN
+    DROP TABLE IF EXISTS testing_evan_2052.users;
+    DROP TABLE IF EXISTS testing_evan_2052.users_raw;
+
+    CREATE TABLE testing_evan_2052.users (
+        `id` INT64 OPTIONS (description = 'PK cannot be null, but after raw insert and before typing, row will be temporarily null')
+      , `first_name` STRING
+      , `age` INT64
+      , `address` JSON
+      , `updated_at` TIMESTAMP
+      , `_airbyte_meta` JSON NOT NULL OPTIONS (description = 'Airbyte column, cannot be null')
+      , `_airbyte_raw_id` STRING NOT NULL OPTIONS (description = 'Airbyte column, cannot be null')
+      , `_airbyte_extracted_at` TIMESTAMP NOT NULL OPTIONS (description = 'Airbyte column, cannot be null')
+    )
+    PARTITION BY (
+      DATE_TRUNC(_airbyte_extracted_at, DAY)
+      -- TODO: Learn about partition_expiration_days https://cloud.google.com/bigquery/docs/creating-partitioned-tables
+    ) CLUSTER BY
+      id, _airbyte_extracted_at
+    OPTIONS (
+      description="users table"
+    )
+    ;
+END
+;
 
 CREATE OR REPLACE PROCEDURE testing_evan_2052._airbyte_prepare_raw_table()
 BEGIN
@@ -225,70 +231,50 @@ BEGIN
   COMMIT TRANSACTION;
 END;
 
-----------------------------
---------- SYNC 1 -----------
-----------------------------
+-------------------------------------------------
+--------- OUT OF ORDER DELETE 2 SYNCS -----------
+-------------------------------------------------
 
+CALL testing_evan_2052.reset();
 CALL testing_evan_2052._airbyte_prepare_raw_table();
 
--- Load the raw data
-
-INSERT INTO testing_evan_2052.users_raw (`_airbyte_data`, `_airbyte_raw_id`, `_airbyte_extracted_at`) VALUES (JSON'{   "id": 1,    "updated_at": "2020-01-01T00:00:00Z",   "first_name": "Evan",   "age": 38,   "address": {     "city": "San Francisco",     "zip": "94001"   } }', GENERATE_UUID(), CURRENT_TIMESTAMP());
-INSERT INTO testing_evan_2052.users_raw (`_airbyte_data`, `_airbyte_raw_id`, `_airbyte_extracted_at`) VALUES (JSON'{   "id": 2,    "updated_at": "2020-01-01T00:00:01Z",   "first_name": "Brian",   "age": 39,   "address": {     "city": "Menlo Park",     "zip": "94002"   } }', GENERATE_UUID(), CURRENT_TIMESTAMP());
-INSERT INTO testing_evan_2052.users_raw (`_airbyte_data`, `_airbyte_raw_id`, `_airbyte_extracted_at`) VALUES (JSON'{   "id": 3,    "updated_at": "2020-01-01T00:00:02Z",   "first_name": "Edward",   "age": 40,   "address": {     "city": "Sunyvale",     "zip": "94003"   } }', GENERATE_UUID(), CURRENT_TIMESTAMP());
-INSERT INTO testing_evan_2052.users_raw (`_airbyte_data`, `_airbyte_raw_id`, `_airbyte_extracted_at`) VALUES (JSON'{   "id": 4,    "updated_at": "2020-01-01T00:00:03Z",   "first_name": "Joe",   "address": {     "city": "Seattle",     "zip": "98999"   } }', GENERATE_UUID(), CURRENT_TIMESTAMP());
-
-
+INSERT INTO testing_evan_2052.users_raw (`_airbyte_data`, `_airbyte_raw_id`, `_airbyte_extracted_at`) VALUES (JSON'{   "id": 1,    "updated_at": "2020-01-02T00:00:00Z",   "first_name": "USER DELETED",   "age": 38,   "address": {}, "_ab_cdc_deleted_at": true }', GENERATE_UUID(), CURRENT_TIMESTAMP());
 CALL testing_evan_2052._airbyte_type_dedupe();
 
-----------------------------
---------- SYNC 2 -----------
-----------------------------
+INSERT INTO testing_evan_2052.users_raw (`_airbyte_data`, `_airbyte_raw_id`, `_airbyte_extracted_at`) VALUES (JSON'{   "id": 1,    "updated_at": "2020-01-01T00:00:00Z",   "first_name": "USER UPDATED",   "age": 38,   "address": {} }', GENERATE_UUID(), CURRENT_TIMESTAMP());
+CALL testing_evan_2052._airbyte_type_dedupe();
 
+------------------------------------------------
+--------- OUT OF ORDER DELETE 1 SYNC -----------
+------------------------------------------------
+
+CALL testing_evan_2052.reset();
 CALL testing_evan_2052._airbyte_prepare_raw_table();
 
--- Load the raw data
--- Age update for testing_evan_2052 (user 1)
--- There is an update for Brian (user 2, new address.zip)
--- There is an update for Edward (user 3, age is invalid)
--- No update for Joe (user 4)
-
-INSERT INTO testing_evan_2052.users_raw (`_airbyte_data`, `_airbyte_raw_id`, `_airbyte_extracted_at`) VALUES (JSON'{   "id": 1,    "updated_at": "2020-01-02T00:00:00Z",   "first_name": "Evan",   "age": 39,   "address": {     "city": "San Francisco",     "zip": "94001"   } }', GENERATE_UUID(), CURRENT_TIMESTAMP());
-INSERT INTO testing_evan_2052.users_raw (`_airbyte_data`, `_airbyte_raw_id`, `_airbyte_extracted_at`) VALUES (JSON'{   "id": 2,    "updated_at": "2020-01-02T00:00:01Z",   "first_name": "Brian",   "age": 39,   "address": {     "city": "Menlo Park",     "zip": "99999"   } }', GENERATE_UUID(), CURRENT_TIMESTAMP());
-INSERT INTO testing_evan_2052.users_raw (`_airbyte_data`, `_airbyte_raw_id`, `_airbyte_extracted_at`) VALUES (JSON'{   "id": 3,    "updated_at": "2020-01-02T00:00:02Z",   "first_name": "Edward",   "age": "forty",   "address": {     "city": "Sunyvale",     "zip": "94003"   } }', GENERATE_UUID(), CURRENT_TIMESTAMP());
-
+INSERT INTO testing_evan_2052.users_raw (`_airbyte_data`, `_airbyte_raw_id`, `_airbyte_extracted_at`) VALUES (JSON'{   "id": 1,    "updated_at": "2020-01-02T00:00:00Z",   "first_name": "USER DELETED",   "age": 38,   "address": {}, "_ab_cdc_deleted_at": true }', GENERATE_UUID(), CURRENT_TIMESTAMP());
+INSERT INTO testing_evan_2052.users_raw (`_airbyte_data`, `_airbyte_raw_id`, `_airbyte_extracted_at`) VALUES (JSON'{   "id": 1,    "updated_at": "2020-01-01T00:00:00Z",   "first_name": "USER UPDATED",   "age": 38,   "address": {} }', GENERATE_UUID(), CURRENT_TIMESTAMP());
 CALL testing_evan_2052._airbyte_type_dedupe();
 
-----------------------------
---------- SYNC 3 -----------
-----------------------------
+--------------------------------------------------------------
+--------- USER COMES BACK AFTER CDC DELETE 2 SYNCS -----------
+--------------------------------------------------------------
 
+CALL testing_evan_2052.reset();
 CALL testing_evan_2052._airbyte_prepare_raw_table();
 
--- Load the raw data
--- Delete row 1 with CDC
--- Insert multiple records for a new user (with age incrementing each time)
-
-INSERT INTO testing_evan_2052.users_raw (`_airbyte_data`, `_airbyte_raw_id`, `_airbyte_extracted_at`) VALUES (JSON'{   "id": 1,    "updated_at": "2020-01-03T00:00:00Z",   "first_name": "Brian",   "age": 39,   "address": {     "city": "Menlo Park",     "zip": "99999"   }, "_ab_cdc_deleted_at": true}', GENERATE_UUID(), CURRENT_TIMESTAMP());
-INSERT INTO testing_evan_2052.users_raw (`_airbyte_data`, `_airbyte_raw_id`, `_airbyte_extracted_at`) VALUES (JSON'{   "id": 5,    "updated_at": "2020-01-03T00:00:01Z",   "first_name": "Cynthia",   "age": 40,   "address": {     "city": "Redwood City",     "zip": "98765"   }}', GENERATE_UUID(), CURRENT_TIMESTAMP());
-INSERT INTO testing_evan_2052.users_raw (`_airbyte_data`, `_airbyte_raw_id`, `_airbyte_extracted_at`) VALUES (JSON'{   "id": 5,    "updated_at": "2020-01-03T00:00:02Z",   "first_name": "Cynthia",   "age": 41,   "address": {     "city": "Redwood City",     "zip": "98765"   }}', GENERATE_UUID(), CURRENT_TIMESTAMP());
-INSERT INTO testing_evan_2052.users_raw (`_airbyte_data`, `_airbyte_raw_id`, `_airbyte_extracted_at`) VALUES (JSON'{   "id": 5,    "updated_at": "2020-01-03T00:00:03Z",   "first_name": "Cynthia",   "age": 42,   "address": {     "city": "Redwood City",     "zip": "98765"   }}', GENERATE_UUID(), CURRENT_TIMESTAMP());
-
+INSERT INTO testing_evan_2052.users_raw (`_airbyte_data`, `_airbyte_raw_id`, `_airbyte_extracted_at`) VALUES (JSON'{   "id": 1,    "updated_at": "2020-01-01T00:00:00Z",   "first_name": "USER DELETED",   "age": 38,   "address": {}, "_ab_cdc_deleted_at": true }', GENERATE_UUID(), CURRENT_TIMESTAMP());
 CALL testing_evan_2052._airbyte_type_dedupe();
 
-----------------------
--- FINAL VALIDATION --
-----------------------
-/*
+INSERT INTO testing_evan_2052.users_raw (`_airbyte_data`, `_airbyte_raw_id`, `_airbyte_extracted_at`) VALUES (JSON'{   "id": 1,    "updated_at": "2020-01-02T00:00:00Z",   "first_name": "USER COMES BACK",   "age": 38,   "address": {} }', GENERATE_UUID(), CURRENT_TIMESTAMP());
+CALL testing_evan_2052._airbyte_type_dedupe();
 
-You should see 5 RAW records, one for each of the 5 users
-You should see 4 TYPED records, one for each user, except user #2, which was CDC deleted
-You should have the latest data for each user in the typed final table:
-  * User #1 (Evan) has the latest data (age=39)
-  * User #3 (Edward) has a null age [+ error] due to that age being un-typable
-  * User #4 (Joe) has a null age & no errors
-  * User #5 (Cynthia) has one entry dispite the multiple insertes, with the latest entry (age=42)
+-------------------------------------------------------------
+--------- USER COMES BACK AFTER CDC DELETE 1 SYNC -----------
+-------------------------------------------------------------
 
-*/
+CALL testing_evan_2052.reset();
+CALL testing_evan_2052._airbyte_prepare_raw_table();
 
-SELECT CURRENT_TIMESTAMP();
+INSERT INTO testing_evan_2052.users_raw (`_airbyte_data`, `_airbyte_raw_id`, `_airbyte_extracted_at`) VALUES (JSON'{   "id": 1,    "updated_at": "2020-01-01T00:00:00Z",   "first_name": "USER DELETED",   "age": 38,   "address": {}, "_ab_cdc_deleted_at": true }', GENERATE_UUID(), CURRENT_TIMESTAMP());
+INSERT INTO testing_evan_2052.users_raw (`_airbyte_data`, `_airbyte_raw_id`, `_airbyte_extracted_at`) VALUES (JSON'{   "id": 1,    "updated_at": "2020-01-02T00:00:00Z",   "first_name": "USER COMES BACK",   "age": 38,   "address": {} }', GENERATE_UUID(), CURRENT_TIMESTAMP());
+CALL testing_evan_2052._airbyte_type_dedupe();
