@@ -6,12 +6,13 @@ Read more about this projedt in https://github.com/airbytehq/airbyte/issues/2602
 
 ## Normalization Jobs Checklist
 
-- [ ] Accepts batches of new data and types them safely while inserting the data into the final table
-- [ ] Handles deduplication
-- [ ] Handles per-row typing errors safely
+- [x] Accepts batches of new data and types them safely while inserting the data into the final table
+- [x] Handles deduplication
+- [x] Handles per-row typing errors safely
 - [ ] Handles composite primary keys
-- [ ] Handles deduplication when multiple entries for a PK exist in the same batch
-- [ ] Handles deduplication when multiple entries for a PK when inserted out-of-order across different batches
+- [x] Handles deduplication when multiple entries for a PK exist in the same batch
+- [x] Handles deduplication when multiple entries for a PK when inserted out-of-order across different batches
+- [x] Handles CDC deletes and releated shenanigans. 
 
 ## Snowflake Testing Notes.
 
