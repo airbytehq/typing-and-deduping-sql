@@ -219,7 +219,7 @@ BEGIN
     UPDATE testing_evan_2052.users_raw
     SET `_airbyte_loaded_at` = CURRENT_TIMESTAMP()
     WHERE `_airbyte_loaded_at` IS NULL
-    AND previous_extracted_at_max <= previous_extracted_at_max
+    AND previous_extracted_at_max <= _airbyte_extracted_at
     ;
 
   COMMIT TRANSACTION;
