@@ -24,6 +24,7 @@ KNOWN LIMITATIONS
 -- Set up the Experiment
 -- Assumption: We can build the table at the start of the sync based only on the schema we get from the source/configured catalog
 
+DECLARE previous_extracted_at_max TIMESTAMP DEFAULT "2000-01-01 00:00:00";
 DROP TABLE IF EXISTS testing_evan_2052.users;
 DROP TABLE IF EXISTS testing_evan_2052.users_raw;
 
@@ -224,12 +225,6 @@ BEGIN
 
   COMMIT TRANSACTION;
 END;
-
--------------------------------
---------- VARIABLES -----------
--------------------------------
-
-DECLARE previous_extracted_at_max TIMESTAMP DEFAULT "2000-01-01 00:00:00";
 
 ----------------------------
 --------- SYNC 1 -----------
