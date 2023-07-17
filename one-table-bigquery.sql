@@ -24,7 +24,6 @@ KNOWN LIMITATIONS
 -- Set up the Experiment
 -- Assumption: We can build the table at the start of the sync based only on the schema we get from the source/configured catalog
 
-DECLARE previous_extracted_at_max TIMESTAMP DEFAULT "2000-01-01 00:00:00";
 DROP TABLE IF EXISTS testing_evan_2052.users;
 DROP TABLE IF EXISTS testing_evan_2052.users_raw;
 
@@ -140,7 +139,7 @@ BEGIN
         _airbyte_extracted_at
       FROM testing_evan_2052.users_raw
       WHERE
-        previous_extracted_at_max >= _airbyte_extracted_at
+        (SELECT IFNULL(MAX(_airbyte_extracted_at), "2000-01-01 00:00:00") FROM testing_evan_2052.users_raw) >= _airbyte_extracted_at
         AND (
           _airbyte_loaded_at IS NULL -- inserting only new/null values, we can recover from failed previous checkpoints
           OR (
@@ -220,7 +219,7 @@ BEGIN
     UPDATE testing_evan_2052.users_raw
     SET `_airbyte_loaded_at` = CURRENT_TIMESTAMP()
     WHERE `_airbyte_loaded_at` IS NULL
-    AND previous_extracted_at_max <= _airbyte_extracted_at
+    AND (SELECT IFNULL(MAX(_airbyte_extracted_at), "2000-01-01 00:00:00") FROM testing_evan_2052.users_raw) <= _airbyte_extracted_at
     ;
 
   COMMIT TRANSACTION;
@@ -231,7 +230,6 @@ END;
 ----------------------------
 
 CALL testing_evan_2052._airbyte_prepare_raw_table();
-SET previous_extracted_at_max = (SELECT IFNULL(MAX(_airbyte_extracted_at), previous_extracted_at_max) FROM testing_evan_2052.users_raw);
 
 -- Load the raw data
 
@@ -247,7 +245,6 @@ CALL testing_evan_2052._airbyte_type_dedupe();
 ----------------------------
 
 CALL testing_evan_2052._airbyte_prepare_raw_table();
-SET previous_extracted_at_max = (SELECT IFNULL(MAX(_airbyte_extracted_at), previous_extracted_at_max) FROM testing_evan_2052.users_raw);
 
 -- Load the raw data
 -- Age update for testing_evan_2052 (user 1)
@@ -266,7 +263,6 @@ CALL testing_evan_2052._airbyte_type_dedupe();
 ----------------------------
 
 CALL testing_evan_2052._airbyte_prepare_raw_table();
-SET previous_extracted_at_max = (SELECT IFNULL(MAX(_airbyte_extracted_at), previous_extracted_at_max) FROM testing_evan_2052.users_raw);
 
 -- Load the raw data
 -- Delete row 1 with CDC
