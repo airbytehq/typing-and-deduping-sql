@@ -140,7 +140,7 @@ BEGIN
         _airbyte_extracted_at
       FROM testing_evan_2052.users_raw
       WHERE
-        previous_extracted_at_max >= previous_extracted_at_max
+        previous_extracted_at_max >= _airbyte_extracted_at
         AND (
           _airbyte_loaded_at IS NULL -- inserting only new/null values, we can recover from failed previous checkpoints
           OR (
