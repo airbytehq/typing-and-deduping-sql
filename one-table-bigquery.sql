@@ -139,11 +139,14 @@ BEGIN
         _airbyte_extracted_at
       FROM testing_evan_2052.users_raw
       WHERE
-        _airbyte_loaded_at IS NULL -- inserting only new/null values, we can recover from failed previous checkpoints
-        OR (
-          -- Temporarily place back an entry for any CDC-deleted record so we can order them properly by cursor.  We only need the PK and cursor value
-          _airbyte_loaded_at IS NOT NULL
-          AND JSON_VALUE(`_airbyte_data`, '$._ab_cdc_deleted_at') IS NOT NULL
+        previous_extracted_at_max >= previous_extracted_at_max
+        AND (
+          _airbyte_loaded_at IS NULL -- inserting only new/null values, we can recover from failed previous checkpoints
+          OR (
+            -- Temporarily place back an entry for any CDC-deleted record so we can order them properly by cursor.  We only need the PK and cursor value
+            _airbyte_loaded_at IS NOT NULL
+            AND JSON_VALUE(`_airbyte_data`, '$._ab_cdc_deleted_at') IS NOT NULL
+          )
         )
     )
 
@@ -216,16 +219,24 @@ BEGIN
     UPDATE testing_evan_2052.users_raw
     SET `_airbyte_loaded_at` = CURRENT_TIMESTAMP()
     WHERE `_airbyte_loaded_at` IS NULL
+    AND previous_extracted_at_max <= previous_extracted_at_max
     ;
 
   COMMIT TRANSACTION;
 END;
+
+-------------------------------
+--------- VARIABLES -----------
+-------------------------------
+
+DECLARE previous_extracted_at_max TIMESTAMP DEFAULT "2000-01-01 00:00:00";
 
 ----------------------------
 --------- SYNC 1 -----------
 ----------------------------
 
 CALL testing_evan_2052._airbyte_prepare_raw_table();
+SET previous_extracted_at_max = (SELECT IFNULL(MAX(_airbyte_extracted_at), previous_extracted_at_max) FROM testing_evan_2052.users_raw);
 
 -- Load the raw data
 
@@ -234,7 +245,6 @@ INSERT INTO testing_evan_2052.users_raw (`_airbyte_data`, `_airbyte_raw_id`, `_a
 INSERT INTO testing_evan_2052.users_raw (`_airbyte_data`, `_airbyte_raw_id`, `_airbyte_extracted_at`) VALUES (JSON'{   "id": 3,    "updated_at": "2020-01-01T00:00:02Z",   "first_name": "Edward",   "age": 40,   "address": {     "city": "Sunyvale",     "zip": "94003"   } }', GENERATE_UUID(), CURRENT_TIMESTAMP());
 INSERT INTO testing_evan_2052.users_raw (`_airbyte_data`, `_airbyte_raw_id`, `_airbyte_extracted_at`) VALUES (JSON'{   "id": 4,    "updated_at": "2020-01-01T00:00:03Z",   "first_name": "Joe",   "address": {     "city": "Seattle",     "zip": "98999"   } }', GENERATE_UUID(), CURRENT_TIMESTAMP());
 
-
 CALL testing_evan_2052._airbyte_type_dedupe();
 
 ----------------------------
@@ -242,6 +252,7 @@ CALL testing_evan_2052._airbyte_type_dedupe();
 ----------------------------
 
 CALL testing_evan_2052._airbyte_prepare_raw_table();
+SET previous_extracted_at_max = (SELECT IFNULL(MAX(_airbyte_extracted_at), previous_extracted_at_max) FROM testing_evan_2052.users_raw);
 
 -- Load the raw data
 -- Age update for testing_evan_2052 (user 1)
@@ -260,6 +271,7 @@ CALL testing_evan_2052._airbyte_type_dedupe();
 ----------------------------
 
 CALL testing_evan_2052._airbyte_prepare_raw_table();
+SET previous_extracted_at_max = (SELECT IFNULL(MAX(_airbyte_extracted_at), previous_extracted_at_max) FROM testing_evan_2052.users_raw);
 
 -- Load the raw data
 -- Delete row 1 with CDC
