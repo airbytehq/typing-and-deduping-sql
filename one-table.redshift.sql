@@ -79,9 +79,9 @@ $$ LANGUAGE plpythonu;
 CREATE OR REPLACE FUNCTION _airbyte_safe_cast_to_timestamp(input text)
 RETURNS TIMESTAMP
 STABLE AS $$
-	date_format = '%Y-%m-%dT%H:%M:%S'
+	import dateutil.parser
 	try:
-		v = datetime.strptime(input, date_format)
+		v = dateutil.parser.parse(input)
 		return v
 	except:
 		return None
@@ -93,11 +93,11 @@ $$ LANGUAGE plpythonu;
 
 -- http://datasamurai.blogspot.com/2016/06/creating-uuid-function-in-redshift.html
 CREATE OR REPLACE FUNCTION gen_uuid()
-RETURNS character varying AS
-' import uuid
+RETURNS VARCHAR(36)
+VOLATILE AS $$
+ import uuid
  return uuid.uuid4().__str__()
- '
-LANGUAGE plpythonu VOLATILE;
+$$ LANGUAGE plpythonu;
 
 -------------------------------------
 --------- TYPE AND DEDUPE -----------
@@ -143,38 +143,7 @@ BEGIN
   -- BEGIN
 
   -- Step 2: Move the new data to the typed table
-  WITH intermediate_data AS (
-    SELECT
-      _airbyte_safe_cast_to_integer(_airbyte_data ->> 'id') as id,
-      _airbyte_safe_cast_to_text(_airbyte_data ->> 'first_name') as first_name,
-      _airbyte_safe_cast_to_integer(_airbyte_data ->> 'age') as age,
-      _airbyte_safe_cast_to_json(_airbyte_data ->> 'address') as address,
-      _airbyte_safe_cast_to_timestamp(_airbyte_data ->> 'updated_at') as updated_at,
-      (
-        CASE WHEN (_airbyte_data ->> 'id' IS NOT NULL) AND (_airbyte_safe_cast_to_integer(_airbyte_data ->> 'id') IS NULL) THEN ARRAY['Problem with `id`'] ELSE ARRAY[]::text[] END
-        ||
-        CASE WHEN (_airbyte_data ->> 'first_name' IS NOT NULL) AND (_airbyte_safe_cast_to_text(_airbyte_data ->> 'first_name') IS NULL) THEN ARRAY['Problem with `first_name`'] ELSE ARRAY[]::text[] END
-        ||
-        CASE WHEN (_airbyte_data ->> 'age' IS NOT NULL) AND (_airbyte_safe_cast_to_integer(_airbyte_data ->> 'age') IS NULL) THEN ARRAY['Problem with `age`'] ELSE ARRAY[]::text[] END
-        ||
-        CASE WHEN (_airbyte_data ->> 'updated_at' IS NOT NULL) AND (_airbyte_safe_cast_to_timestamp(_airbyte_data ->> 'updated_at') IS NULL) THEN ARRAY['Problem with `updated_at`'] ELSE ARRAY[]::text[] END
-        ||
-        CASE WHEN (_airbyte_data ->> 'address' IS NOT NULL) AND (_airbyte_safe_cast_to_json(_airbyte_data ->> 'address') IS NULL) THEN ARRAY['Problem with `address`'] ELSE ARRAY[]::text[] END
-      ) as _airbyte_cast_errors
-      , _airbyte_raw_id
-      , _airbyte_extracted_at
-    FROM x.users_raw
-    WHERE
-      _airbyte_loaded_at IS NULL -- inserting only new/null values, we can recover from failed previous checkpoints
-      OR (
-        -- Temporarily place back an entry for any CDC-deleted record so we can order them properly by cursor.  We only need the PK and cursor value
-        _airbyte_loaded_at IS NOT NULL
-        AND _airbyte_data ->> '$._ab_cdc_deleted_at' IS NOT NULL
-      )
-  )
-
-  INSERT INTO x.users
-  (
+  INSERT INTO x.users (
     id,
     first_name,
     age,
@@ -184,6 +153,43 @@ BEGIN
     _airbyte_raw_id,
     _airbyte_extracted_at
   )
+
+  WITH intermediate_data AS (
+    SELECT
+       _airbyte_safe_cast_to_integer(_airbyte_data.id::text) as id
+      ,_airbyte_safe_cast_to_text(_airbyte_data.first_name::text) as first_name
+      ,_airbyte_safe_cast_to_integer(_airbyte_data.age::text) as age
+      ,_airbyte_data.address as address -- there is no way to make a JSON/SUPER safe cast in Redshift
+      ,_airbyte_safe_cast_to_timestamp(_airbyte_data.updated_at::text) as updated_at
+      ,ARRAY_CONCAT(
+      	CASE WHEN (_airbyte_data.id IS NOT NULL) AND (_airbyte_safe_cast_to_integer(_airbyte_data.id::text) IS NULL) THEN ARRAY('Problem with `id`') ELSE ARRAY() END
+        ,
+        ARRAY_CONCAT(
+        	CASE WHEN (_airbyte_data.first_name IS NOT NULL) AND (_airbyte_safe_cast_to_text(_airbyte_data.first_name::text) IS NULL) THEN ARRAY('Problem with `first_name`') ELSE ARRAY() END
+        	,
+        	ARRAY_CONCAT(
+        		CASE WHEN (_airbyte_data.age IS NOT NULL) AND (_airbyte_safe_cast_to_integer(_airbyte_data.age::text) IS NULL) THEN ARRAY('Problem with `age`') ELSE ARRAY() END
+        		,
+        		ARRAY_CONCAT(
+        			CASE WHEN (_airbyte_data.updated_at IS NOT NULL) AND (_airbyte_safe_cast_to_timestamp(_airbyte_data.updated_at::text) IS NULL) THEN ARRAY('Problem with `updated_at`') ELSE ARRAY() END
+        			,
+        			CASE WHEN (_airbyte_data.address IS NOT NULL) AND (false) THEN ARRAY('Problem with `address`') ELSE ARRAY() END
+        			)
+        		)
+        	)
+      ) as _airbyte_cast_errors
+      , _airbyte_raw_id
+      , _airbyte_extracted_at
+    FROM x.users_raw
+    WHERE
+      _airbyte_loaded_at IS NULL -- inserting only new/null values, we can recover from failed previous checkpoints
+      OR (
+        -- Temporarily place back an entry for any CDC-deleted record so we can order them properly by cursor.  We only need the PK and cursor value
+        _airbyte_loaded_at IS NOT NULL
+        AND _airbyte_data._ab_cdc_deleted_at IS NOT NULL
+      )
+  )
+
   SELECT
       id,
       first_name,
@@ -191,8 +197,8 @@ BEGIN
       updated_at,
       address,
       CASE
-        WHEN array_length(_airbyte_cast_errors, 1) = 0 THEN '{"errors": []}'::JSON
-        ELSE json_build_object('errors', _airbyte_cast_errors)
+        WHEN get_array_length(_airbyte_cast_errors) = 0 THEN JSON_PARSE('{"errors": []}')
+        ELSE JSON_PARSE('{"errors": ' || JSON_SERIALIZE(_airbyte_cast_errors) || '}') -- no json_build_object or equivalent, so we need to make the body content for the errors array ourselves
       END AS _airbyte_meta,
       _airbyte_raw_id,
       _airbyte_extracted_at
@@ -241,9 +247,9 @@ BEGIN
     -- Delete rows that have been CDC deleted
     id IN (
       SELECT
-        _airbyte_safe_cast_to_integer(_airbyte_data ->> 'id') as id -- based on the PK which we know from the connector catalog
+        _airbyte_safe_cast_to_integer(_airbyte_data.id::text) as id -- based on the PK which we know from the connector catalog
       FROM x.users_raw
-      WHERE _airbyte_data ->> '_ab_cdc_deleted_at' IS NOT NULL
+      WHERE _airbyte_data._ab_cdc_deleted_at IS NOT NULL
     )
   ;
 
