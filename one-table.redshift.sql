@@ -50,7 +50,7 @@ STABLE AS $$
 		v = int(input)
 		return v
 	except:
-		return null
+		return None
 $$ LANGUAGE plpythonu;
 
 -- DROP FUNCTION _airbyte_safe_cast_to_boolean(input text)
@@ -61,7 +61,7 @@ STABLE AS $$
 		v = input.lower() == 'True' or input.lower() == 'true'
 		return v
 	except:
-		return null
+		return None
 $$ LANGUAGE plpythonu;
 
 -- DROP FUNCTION _airbyte_safe_cast_to_text(input text);
@@ -72,7 +72,7 @@ STABLE AS $$
 		v = str(input)
 		return v
 	except:
-		return null
+		return None
 $$ LANGUAGE plpythonu;
 
 -- DROP FUNCTION _airbyte_safe_cast_to_timestamp(input text);
@@ -84,7 +84,7 @@ STABLE AS $$
 		v = datetime.strptime(input, date_format)
 		return v
 	except:
-		return null
+		return None
 $$ LANGUAGE plpythonu;
 
 ---------------------------
@@ -132,7 +132,7 @@ BEGIN
     FROM x.USERS_RAW
     WHERE
       "_airbyte_loaded_at" IS NULL
-      AND _airbyte_safe_cast_to_integer(_airbyte_data ->> 'id') IS NULL
+      AND _airbyte_safe_cast_to_integer(_airbyte_data.id::text) IS NULL
     );
 
   IF missing_pk_count > 0 THEN
@@ -264,10 +264,10 @@ CALL _airbyte_prepare_raw_table();
 
 -- Load the raw data
 
-INSERT INTO x.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES ('{   "id": 1,    "updated_at": "2020-01-01T00:00:00Z",   "first_name": "Evan",   "age": 38,   "address": {     "city": "San Francisco",     "zip": "94001"   } }', gen_uuid(), GETDATE());
-INSERT INTO x.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES ('{   "id": 2,    "updated_at": "2020-01-01T00:00:01Z",   "first_name": "Brian",   "age": 39,   "address": {     "city": "Menlo Park",     "zip": "94002"   } }', gen_uuid(), GETDATE());
-INSERT INTO x.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES ('{   "id": 3,    "updated_at": "2020-01-01T00:00:02Z",   "first_name": "Edward",   "age": 40,   "address": {     "city": "Sunyvale",     "zip": "94003"   } }', gen_uuid(), GETDATE());
-INSERT INTO x.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES ('{   "id": 4,    "updated_at": "2020-01-01T00:00:03Z",   "first_name": "Joe",   "address": {     "city": "Seattle",     "zip": "98999"   } }', gen_uuid(), GETDATE()); -- Joe is missing an age, null OK
+INSERT INTO x.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES (JSON_PARSE('{   "id": 1,    "updated_at": "2020-01-01T00:00:00Z",   "first_name": "Evan",   "age": 38,   "address": {     "city": "San Francisco",     "zip": "94001"   } }'), gen_uuid(), GETDATE());
+INSERT INTO x.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES (JSON_PARSE('{   "id": 2,    "updated_at": "2020-01-01T00:00:01Z",   "first_name": "Brian",   "age": 39,   "address": {     "city": "Menlo Park",     "zip": "94002"   } }'), gen_uuid(), GETDATE());
+INSERT INTO x.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES (JSON_PARSE('{   "id": 3,    "updated_at": "2020-01-01T00:00:02Z",   "first_name": "Edward",   "age": 40,   "address": {     "city": "Sunyvale",     "zip": "94003"   } }'), gen_uuid(), GETDATE());
+INSERT INTO x.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES (JSON_PARSE('{   "id": 4,    "updated_at": "2020-01-01T00:00:03Z",   "first_name": "Joe",   "address": {     "city": "Seattle",     "zip": "98999"   } }'), gen_uuid(), GETDATE()); -- Joe is missing an age, null OK
 
 CALL _airbyte_type_dedupe();
 
@@ -283,9 +283,9 @@ CALL _airbyte_prepare_raw_table();
 -- There is an update for Edward (user 3, age is invalid)
 -- No update for Joe (user 4)
 
-INSERT INTO x.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES ('{   "id": 1,    "updated_at": "2020-01-02T00:00:00Z",   "first_name": "Evan",   "age": 39,   "address": {     "city": "San Francisco",     "zip": "94001"   } }', gen_uuid(), GETDATE());
-INSERT INTO x.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES ('{   "id": 2,    "updated_at": "2020-01-02T00:00:01Z",   "first_name": "Brian",   "age": 39,   "address": {     "city": "Menlo Park",     "zip": "99999"   } }', gen_uuid(), GETDATE());
-INSERT INTO x.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES ('{   "id": 3,    "updated_at": "2020-01-02T00:00:02Z",   "first_name": "Edward",   "age": "forty",   "address": {     "city": "Sunyvale",     "zip": "94003"   } }', gen_uuid(), GETDATE());
+INSERT INTO x.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES (JSON_PARSE('{   "id": 1,    "updated_at": "2020-01-02T00:00:00Z",   "first_name": "Evan",   "age": 39,   "address": {     "city": "San Francisco",     "zip": "94001"   } }'), gen_uuid(), GETDATE());
+INSERT INTO x.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES (JSON_PARSE('{   "id": 2,    "updated_at": "2020-01-02T00:00:01Z",   "first_name": "Brian",   "age": 39,   "address": {     "city": "Menlo Park",     "zip": "99999"   } }'), gen_uuid(), GETDATE());
+INSERT INTO x.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES (JSON_PARSE('{   "id": 3,    "updated_at": "2020-01-02T00:00:02Z",   "first_name": "Edward",   "age": "forty",   "address": {     "city": "Sunyvale",     "zip": "94003"   } }'), gen_uuid(), GETDATE());
 
 CALL _airbyte_type_dedupe();
 
@@ -299,10 +299,10 @@ CALL _airbyte_prepare_raw_table();
 -- Delete row 1 with CDC
 -- Insert multiple records for a new user (with age incrementing each time)
 
-INSERT INTO x.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES ('{   "id": 2,    "updated_at": "2020-01-03T00:00:00Z",   "first_name": "Brian",   "age": 39,   "address": {     "city": "Menlo Park",     "zip": "99999"   }, "_ab_cdc_deleted_at": true}', gen_uuid(), GETDATE());
-INSERT INTO x.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES ('{   "id": 5,    "updated_at": "2020-01-03T00:00:01Z",   "first_name": "Cynthia",   "age": 40,   "address": {     "city": "Redwood City",     "zip": "98765"   }}', gen_uuid(), GETDATE());
-INSERT INTO x.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES ('{   "id": 5,    "updated_at": "2020-01-03T00:00:02Z",   "first_name": "Cynthia",   "age": 41,   "address": {     "city": "Redwood City",     "zip": "98765"   }}', gen_uuid(), GETDATE());
-INSERT INTO x.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES ('{   "id": 5,    "updated_at": "2020-01-03T00:00:03Z",   "first_name": "Cynthia",   "age": 42,   "address": {     "city": "Redwood City",     "zip": "98765"   }}', gen_uuid(), GETDATE());
+INSERT INTO x.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES (JSON_PARSE('{   "id": 2,    "updated_at": "2020-01-03T00:00:00Z",   "first_name": "Brian",   "age": 39,   "address": {     "city": "Menlo Park",     "zip": "99999"   }, "_ab_cdc_deleted_at": true}'), gen_uuid(), GETDATE());
+INSERT INTO x.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES (JSON_PARSE('{   "id": 5,    "updated_at": "2020-01-03T00:00:01Z",   "first_name": "Cynthia",   "age": 40,   "address": {     "city": "Redwood City",     "zip": "98765"   }}'), gen_uuid(), GETDATE());
+INSERT INTO x.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES (JSON_PARSE('{   "id": 5,    "updated_at": "2020-01-03T00:00:02Z",   "first_name": "Cynthia",   "age": 41,   "address": {     "city": "Redwood City",     "zip": "98765"   }}'), gen_uuid(), GETDATE());
+INSERT INTO x.users_raw ("_airbyte_data", "_airbyte_raw_id", "_airbyte_extracted_at") VALUES (JSON_PARSE('{   "id": 5,    "updated_at": "2020-01-03T00:00:03Z",   "first_name": "Cynthia",   "age": 42,   "address": {     "city": "Redwood City",     "zip": "98765"   }}'), gen_uuid(), GETDATE());
 
 CALL _airbyte_type_dedupe();
 
