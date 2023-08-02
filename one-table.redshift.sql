@@ -58,7 +58,7 @@ CREATE OR REPLACE FUNCTION _airbyte_safe_cast_to_boolean(input text)
 RETURNS BOOLEAN
 STABLE AS $$
 	try:
-		v = input.lower() == 'True' or input.lower() == 'true'
+		v = input.lower() == 'true'
 		return v
 	except:
 		return None
