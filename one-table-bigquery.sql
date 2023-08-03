@@ -139,11 +139,14 @@ BEGIN
         _airbyte_extracted_at
       FROM testing_evan_2052.users_raw
       WHERE
-        _airbyte_loaded_at IS NULL -- inserting only new/null values, we can recover from failed previous checkpoints
-        OR (
-          -- Temporarily place back an entry for any CDC-deleted record so we can order them properly by cursor.  We only need the PK and cursor value
-          _airbyte_loaded_at IS NOT NULL
-          AND JSON_VALUE(`_airbyte_data`, '$._ab_cdc_deleted_at') IS NOT NULL
+        (SELECT IFNULL(MAX(_airbyte_extracted_at), "2000-01-01 00:00:00") FROM testing_evan_2052.users_raw) >= _airbyte_extracted_at
+        AND (
+          _airbyte_loaded_at IS NULL -- inserting only new/null values, we can recover from failed previous checkpoints
+          OR (
+            -- Temporarily place back an entry for any CDC-deleted record so we can order them properly by cursor.  We only need the PK and cursor value
+            _airbyte_loaded_at IS NOT NULL
+            AND JSON_VALUE(`_airbyte_data`, '$._ab_cdc_deleted_at') IS NOT NULL
+          )
         )
     )
 
@@ -216,6 +219,7 @@ BEGIN
     UPDATE testing_evan_2052.users_raw
     SET `_airbyte_loaded_at` = CURRENT_TIMESTAMP()
     WHERE `_airbyte_loaded_at` IS NULL
+    AND (SELECT IFNULL(MAX(_airbyte_extracted_at), "2000-01-01 00:00:00") FROM testing_evan_2052.users_raw) <= _airbyte_extracted_at
     ;
 
   COMMIT TRANSACTION;
@@ -233,7 +237,6 @@ INSERT INTO testing_evan_2052.users_raw (`_airbyte_data`, `_airbyte_raw_id`, `_a
 INSERT INTO testing_evan_2052.users_raw (`_airbyte_data`, `_airbyte_raw_id`, `_airbyte_extracted_at`) VALUES (JSON'{   "id": 2,    "updated_at": "2020-01-01T00:00:01Z",   "first_name": "Brian",   "age": 39,   "address": {     "city": "Menlo Park",     "zip": "94002"   } }', GENERATE_UUID(), CURRENT_TIMESTAMP());
 INSERT INTO testing_evan_2052.users_raw (`_airbyte_data`, `_airbyte_raw_id`, `_airbyte_extracted_at`) VALUES (JSON'{   "id": 3,    "updated_at": "2020-01-01T00:00:02Z",   "first_name": "Edward",   "age": 40,   "address": {     "city": "Sunyvale",     "zip": "94003"   } }', GENERATE_UUID(), CURRENT_TIMESTAMP());
 INSERT INTO testing_evan_2052.users_raw (`_airbyte_data`, `_airbyte_raw_id`, `_airbyte_extracted_at`) VALUES (JSON'{   "id": 4,    "updated_at": "2020-01-01T00:00:03Z",   "first_name": "Joe",   "address": {     "city": "Seattle",     "zip": "98999"   } }', GENERATE_UUID(), CURRENT_TIMESTAMP());
-
 
 CALL testing_evan_2052._airbyte_type_dedupe();
 
